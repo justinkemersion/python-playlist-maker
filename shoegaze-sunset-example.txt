@@ -1,0 +1,24 @@
+# Example Playlist: Shoegaze Sunset
+# Format: Artist - Title (one per line)
+# Use this file to test playlist-maker.py
+
+My Bloody Valentine - Sometimes
+Slowdive - Alison
+Ride - Vapour Trail
+Lush - Sweetness and Light
+Cocteau Twins - Heaven or Las Vegas
+The Jesus and Mary Chain - Just Like Honey
+Mazzy Star - Fade Into You
+Galaxie 500 - Tugboat
+Swervedriver - Duel
+Chapterhouse - Pearl
+Beach House - Myth
+DIIV - Doused
+Wild Nothing - Shadow
+The Radio Dept. - Heaven's on Fire
+Asobi Seksu - Thursday
+Broadcast - Come On Let's Go
+Pale Saints - Sight of You
+Slowdive - When the Sun Hits
+Ride - Leave Them All Behind
+My Bloody Valentine - Soon

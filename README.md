@@ -222,6 +222,7 @@ Here's a guide to setting up the necessary Python environment to run the script.
         ```bash
         python playlist-maker.py your_input_file.txt [other options...]
         # Or possibly: python3 playlist-maker.py ...
+        # Use the -i or --interactive to interact with the playlist-maker.py to help solve issues.
         ```
 
 10. **Deactivate the Virtual Environment (When Done):**
