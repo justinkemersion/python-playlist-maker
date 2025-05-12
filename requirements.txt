@@ -1,0 +1,4 @@
+mutagen
+fuzzywuzzy
+python-levenshtein
+# pandas # Optional: uncomment if you want to install pandas for better duration checks

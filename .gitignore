@@ -1,0 +1,114 @@
+# --- Python Standard/Boilerplate Ignores ---
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+# Usually these files are created by pyinstaller, if you bundle your script
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Type checking
+.mypy_cache/
+.pyre/
+.pytype/
+
+# Environments
+.env
+.venv
+venv/  # Standard name for our virtual environment
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints
+
+# VS Code settings specific to the project (can be repo-specific)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# macOS specific files
+.DS_Store
+._*
+
+# --- Project Specific Ignores ---
+
+# Log files
+*.log
+logs/
+log/
+# Specifically our default log file if we don't want it checked in
+# warning.log # <-- Optional: Uncomment if you never want logs committed
+
+# Output directories (users generate these)
+/playlists/
+/missing-tracks/
+/playlist-txt/
+
+# Cache files (if implementing library index caching later)
+# library_index.cache
+# *.json # Be more specific if using JSON cache
+
+# Sensitive configuration (if any added later, e.g., MPD credentials)
+# config.ini
+# .secrets
