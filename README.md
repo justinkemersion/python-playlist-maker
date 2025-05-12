@@ -1,4 +1,4 @@
-# Playlist Maker for MPD
+# Playlist Maker (.m3u)
 
 This Python script converts simple text files containing `Artist - Track` listings into `.m3u` playlists suitable for the Music Player Daemon (MPD). It intelligently matches the tracks against your local music library using fuzzy string matching and metadata analysis.
 
