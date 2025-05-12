@@ -1,10 +1,10 @@
 # Playlist Maker (.m3u)
 
-This Python script converts simple text files containing `Artist - Track` listings into `.m3u` playlists suitable for the Music Player Daemon (MPD). It intelligently matches the tracks against your local music library using fuzzy string matching and metadata analysis.
+This Python script converts simple text files containing `Artist - Track` listings into `.m3u` playlists suitable for anything that uses the standard .m3u playlist format. It intelligently matches the tracks against your local music library using fuzzy string matching and metadata analysis.
 
 ## Overview
 
-The script scans your specified music library, builds an index of your tracks (including metadata like artist, title, album, duration, and identifying live recordings), and then processes an input text file. For each `Artist - Track` line in the input file, it searches the library index for the best match. It generates an M3U playlist file with relative paths based on your MPD music directory configuration, making it directly usable by MPD. It also features an interactive mode for resolving ambiguities.
+The script scans your specified music library, builds an index of your tracks (including metadata like artist, title, album, duration, and identifying live recordings), and then processes an input text file. For each `Artist - Track` line in the input file, it searches the library index for the best match. It generates an M3U playlist file with relative paths based on your music directory configuration, making it directly usable by any android music app or software that uses .m3u format playlists. It also features an interactive mode for resolving ambiguities.
 
 ## Features
 
