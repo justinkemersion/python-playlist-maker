@@ -548,6 +548,183 @@ def scan_library(scan_library_path_str, supported_extensions, live_album_keyword
         print(colorize("Error: No tracks found in the specified scan library.", Colors.RED), file=sys.stderr)
         # Consider exiting if scan fails completely? No, maybe user wants to retry later.
 
+# (Add this new function to playlist_maker.py)
+
+def prompt_album_selection_or_skip(input_artist, input_track, artist_library_entries, input_live_format, threshold):
+    """
+    Prompts user to select a track from one of the input artist's albums
+    when no direct track match was found.
+    artist_library_entries: list of all tracks by this artist found in the library.
+    """
+    global library_index # Needed to list tracks from the chosen album
+
+    print("-" * 70)
+    print(f"{Colors.BOLD}{Colors.CYAN}INTERACTIVE ALBUM SELECTION for:{Colors.RESET}")
+    print(f"  Input: {colorize(input_artist, Colors.BOLD)} - {colorize(input_track, Colors.BOLD)}")
+    print(f"  (No direct match found for this track)")
+    print("-" * 70)
+
+    # 1. Gather unique albums for the given artist from their library entries
+    # Normalize artist name from library entries for consistent matching with input_artist's norm
+    # We need to be careful if input_artist was 'Various Artists' and artist_library_entries reflect that.
+    # For simplicity, let's assume artist_library_entries are primarily for the *specific* input_artist.
+    
+    # Use normalized input artist string for more reliable filtering.
+    norm_input_artist, _ = normalize_and_detect_specific_live_format(input_artist)
+
+    # Extract unique albums (case-insensitive for album title grouping)
+    # We only care about albums that actually exist in artist_library_entries
+    albums_by_artist = {} # { "normalized_album_title": "Original Album Title String" }
+    for entry in artist_library_entries:
+        # Ensure the entry's artist is indeed a close match to the input artist
+        # (this should already be true if candidate_artist_entries was formed correctly)
+        lib_artist_norm = entry.get("norm_artist_stripped", "")
+        if norm_input_artist in lib_artist_norm or fuzz.ratio(norm_input_artist, lib_artist_norm) > 80: # Heuristic
+            album_title = entry.get("album")
+            if album_title:
+                norm_album = album_title.lower() # Simple normalization for grouping
+                if norm_album not in albums_by_artist:
+                    albums_by_artist[norm_album] = album_title # Store original casing
+
+    if not albums_by_artist:
+        print(colorize(f"No albums found in the library for artist '{input_artist}' to select from.", Colors.YELLOW))
+        # Fallback to the standard skip/random prompt
+        return prompt_user_for_choice(input_artist, input_track, [], artist_library_entries, input_live_format, threshold)
+
+    # 2. Prompt user to choose an album
+    while True: # Album selection loop
+        print(f"\n{Colors.UNDERLINE}Artist '{input_artist}' has the following albums in your library:{Colors.RESET}")
+        album_choices_map = {}
+        idx = 1
+        # Sort albums by their original title for display
+        sorted_original_album_titles = sorted(list(albums_by_artist.values()))
+
+        for original_album_title in sorted_original_album_titles:
+            print(f"  {colorize(f'[{idx}]', Colors.BLUE)} {original_album_title}")
+            album_choices_map[str(idx)] = original_album_title
+            idx += 1
+        
+        print(f"  {colorize('[S]', Colors.RED)}kip this track input")
+        album_choices_map['s'] = 'skip'
+        if artist_library_entries: # Offer random only if we have artist entries
+             print(f"  {colorize('[R]', Colors.YELLOW)}andom track by '{input_artist}' (from any album)")
+             album_choices_map['r'] = 'random'
+
+
+        try:
+            album_prompt_text = colorize("Choose an album (number, S, R): ", Colors.BLUE + Colors.BOLD)
+            album_choice_str = input(album_prompt_text).lower().strip()
+
+            if album_choice_str in album_choices_map:
+                selected_album_action = album_choices_map[album_choice_str]
+
+                if selected_album_action == 'skip':
+                    print(f"\n{colorize('Skipping track.', Colors.RED)}")
+                    logging.info(f"INTERACTIVE (Album Select): User chose [S]kip for '{input_artist} - {input_track}'.")
+                    return None
+                elif selected_album_action == 'random':
+                    if artist_library_entries:
+                        random_entry = random.choice(artist_library_entries)
+                        print(f"\n{colorize('Selected Random Track:', Colors.YELLOW + Colors.BOLD)}")
+                        print(f"  Artist: {random_entry['artist']} - Title: {random_entry['title']} (Album: {random_entry.get('album', 'N/A')})")
+                        logging.info(f"INTERACTIVE (Album Select): User chose [R]andom track for '{input_artist} - {input_track}'. Selected: {random_entry['path']}")
+                        return random_entry
+                    else: # Should not happen if 'R' is offered
+                        print(colorize("Error: No tracks available for random selection by this artist.", Colors.RED))
+                        continue
+
+                # User selected an album by number
+                chosen_album_title_original = selected_album_action # This is the original case album title
+                logging.info(f"INTERACTIVE (Album Select): User selected album '{chosen_album_title_original}' for '{input_artist} - {input_track}'.")
+
+                # 3. List tracks from the chosen album for that artist
+                tracks_on_selected_album = []
+                for lib_entry in library_index: # Iterate through the whole library
+                    # Match artist (normalized) and album (original case)
+                    lib_artist_norm = lib_entry.get("norm_artist_stripped", "")
+                    # A bit loose on artist match here, assuming context is established
+                    artist_match = norm_input_artist in lib_artist_norm or fuzz.partial_ratio(norm_input_artist, lib_artist_norm) > 85
+                    album_match = lib_entry.get("album") == chosen_album_title_original
+                    
+                    if artist_match and album_match:
+                        tracks_on_selected_album.append(lib_entry)
+                
+                # Try to sort tracks by track number (if tag exists), then title
+                # Assuming duration has tracknumber like '1/12' or just '1'. We need just the number.
+                def get_track_num_sort_key(entry):
+                    tn_str = entry.get("tracknumber", "9999") # Mutagen key is 'tracknumber'
+                    if isinstance(tn_str, str) and '/' in tn_str:
+                        tn_str = tn_str.split('/')[0]
+                    try:
+                        return (int(tn_str), entry.get("title", "").lower())
+                    except ValueError:
+                        return (9999, entry.get("title", "").lower())
+
+                tracks_on_selected_album.sort(key=get_track_num_sort_key)
+
+
+                if not tracks_on_selected_album:
+                    print(colorize(f"No tracks found in library for album '{chosen_album_title_original}' by '{input_artist}'. This is unexpected.", Colors.RED))
+                    logging.error(f"INTERACTIVE (Album Select): No tracks found for album '{chosen_album_title_original}' after selection. Inconsistency?")
+                    continue # Go back to album selection
+
+                # 4. Prompt user to choose a track from this album
+                while True: # Track selection loop
+                    print(f"\n{Colors.UNDERLINE}Tracks on '{chosen_album_title_original}' by '{input_artist}':{Colors.RESET}")
+                    track_choices_map = {}
+                    track_idx = 1
+                    for track_entry in tracks_on_selected_album:
+                        live_status = colorize("LIVE", Colors.MAGENTA) if track_entry['entry_is_live'] else colorize("Studio", Colors.GREEN)
+                        duration_str = f" [{track_entry['duration']}s]" if track_entry.get('duration', -1) != -1 else ""
+                        print(f"  {colorize(f'[{track_idx}]', Colors.BLUE)} {track_entry['title']}{duration_str} - {live_status}")
+                        track_choices_map[str(track_idx)] = track_entry
+                        track_idx += 1
+                    
+                    print(f"  {colorize('[B]', Colors.YELLOW)}ack to album selection")
+                    track_choices_map['b'] = 'back'
+                    print(f"  {colorize('[S]', Colors.RED)}kip original input track")
+                    track_choices_map['s'] = 'skip'
+
+                    try:
+                        track_prompt_text = colorize("Choose a track (number, B, S): ", Colors.BLUE + Colors.BOLD)
+                        track_choice_str = input(track_prompt_text).lower().strip()
+
+                        if track_choice_str in track_choices_map:
+                            selected_track_action = track_choices_map[track_choice_str]
+
+                            if selected_track_action == 'skip':
+                                print(f"\n{colorize('Skipping original track.', Colors.RED)}")
+                                logging.info(f"INTERACTIVE (Album Track Select): User chose [S]kip for '{input_artist} - {input_track}'.")
+                                return None # Propagates to skip
+                            elif selected_track_action == 'back':
+                                logging.info(f"INTERACTIVE (Album Track Select): User chose [B]ack.")
+                                break # Breaks from track selection loop, goes back to album selection loop
+
+                            # User chose a track by number
+                            chosen_final_track = selected_track_action
+                            print(f"\n{colorize('Selected Replacement Track:', Colors.GREEN + Colors.BOLD)}")
+                            print(f"  Artist: {chosen_final_track['artist']} - Title: {chosen_final_track['title']} (Album: {chosen_final_track.get('album', 'N/A')})")
+                            logging.info(f"INTERACTIVE (Album Track Select): User CHOSE track '{chosen_final_track['path']}' as replacement for '{input_artist} - {input_track}'.")
+                            return chosen_final_track # This is the selected library entry dict
+                        else:
+                            print(colorize(f"Invalid choice '{track_choice_str}'. Please enter a valid number, B, or S.", Colors.RED))
+                    except (EOFError, KeyboardInterrupt):
+                        print(colorize("\nInput interrupted. Assuming Skip.", Colors.RED))
+                        logging.warning(f"INTERACTIVE (Album Track Select): EOF/KeyboardInterrupt. Assuming skip for '{input_artist} - {input_track}'.")
+                        return None
+                # End of track selection loop (if 'B' was chosen, it re-loops to album selection)
+                if track_choice_str == 'b': # Check if we broke from inner loop due to 'back'
+                    continue # Go to next iteration of album selection loop
+            
+            else: # Invalid album choice
+                print(colorize(f"Invalid choice '{album_choice_str}'. Please enter a valid number, S, or R.", Colors.RED))
+
+        except (EOFError, KeyboardInterrupt):
+            print(colorize("\nInput interrupted. Assuming Skip.", Colors.RED))
+            logging.warning(f"INTERACTIVE (Album Select): EOF/KeyboardInterrupt. Assuming skip for '{input_artist} - {input_track}'.")
+            return None
+    # End of album selection loop
+
 # --- Interactive Prompt ---
 def prompt_user_for_choice(input_artist, input_track, candidates, artist_matches, input_live_format, threshold):
     """ Presents choices to the user using colors for clarity. """
@@ -667,10 +844,24 @@ def prompt_user_for_choice(input_artist, input_track, candidates, artist_matches
             return None
 
 # --- Track Matching Logic ---
+# (Inside playlist_maker.py)
+# Ensure these are accessible:
+# from fuzzywuzzy import fuzz
+# import logging
+# from .your_module import ( # Or however you import these
+#     library_index, INTERACTIVE_MODE, Colors, colorize,
+#     normalize_and_detect_specific_live_format,
+#     prompt_user_for_choice, prompt_album_selection_or_skip # New album prompt
+# )
+# import random # Ensure random is imported
+
 def find_track_in_index(input_artist, input_track, match_threshold, live_penalty_factor):
-    """Finds the best match in the library_index for the input track."""
-    global library_index
-    global INTERACTIVE_MODE # Use the global flag set in main
+    """
+    Finds the best match in the library_index for the input track,
+    or offers album selection if no direct match and in interactive mode.
+    """
+    global library_index # Assuming library_index is a global list of track dictionaries
+    global INTERACTIVE_MODE # Assuming INTERACTIVE_MODE is a global boolean
 
     norm_input_artist_match_str, input_artist_has_live_format = normalize_and_detect_specific_live_format(input_artist)
     norm_input_title_match_str, input_title_has_live_format = normalize_and_detect_specific_live_format(input_track)
@@ -680,25 +871,25 @@ def find_track_in_index(input_artist, input_track, match_threshold, live_penalty
     logging.debug(f"  Norm Input Match: Artist='{norm_input_artist_match_str}', Title='{norm_input_title_match_str}'")
 
     # --- Find initial artist candidates ---
-    candidate_artist_entries = []
+    candidate_artist_entries = [] # Tracks by artists whose name somewhat matches the input artist
     processed_artists_for_debug = set()
     best_artist_substring_miss_entry, best_artist_substring_miss_score = None, -1
 
     for entry in library_index:
         norm_library_artist_stripped = entry["norm_artist_stripped"]
-        # Substring match (prefer this)
+        # Substring match for artist (input artist found within library artist)
         if norm_input_artist_match_str and norm_library_artist_stripped and norm_input_artist_match_str in norm_library_artist_stripped:
             candidate_artist_entries.append(entry)
             if norm_library_artist_stripped not in processed_artists_for_debug:
                 logging.debug(f"  Artist Substring Candidate: Input '{norm_input_artist_match_str}' in Lib Artist '{norm_library_artist_stripped}' (Path: {entry['path']})")
                 processed_artists_for_debug.add(norm_library_artist_stripped)
-        # Empty artist matches empty artist
+        # Empty input artist matches empty library artist (e.g., "Various Artists" or unknown)
         elif not norm_input_artist_match_str and not norm_library_artist_stripped:
              candidate_artist_entries.append(entry)
              if "UNKNOWN_ARTIST_EMPTY_INPUT" not in processed_artists_for_debug:
                  logging.debug(f"  Artist Empty Match: Path: {entry['path']}")
                  processed_artists_for_debug.add("UNKNOWN_ARTIST_EMPTY_INPUT")
-        # Track fuzzy misses for logging
+        # Track fuzzy misses for artist for logging purposes
         else:
              if norm_input_artist_match_str and norm_library_artist_stripped:
                 current_artist_fuzzy_score = fuzz.ratio(norm_input_artist_match_str, norm_library_artist_stripped)
@@ -713,18 +904,18 @@ def find_track_in_index(input_artist, input_track, match_threshold, live_penalty
                            f"(Norm: '{best_artist_substring_miss_entry['norm_artist_stripped']}', "
                            f"Score: {best_artist_substring_miss_score}, Path: {best_artist_substring_miss_entry['path']})")
         logging.warning(miss_info)
-        # If interactive, prompt user (only Skip available)
         if INTERACTIVE_MODE:
              print(colorize(f"\nNo potential artists found containing '{input_artist}'.", Colors.YELLOW))
-             return prompt_user_for_choice(input_artist, input_track, [], [], is_input_explicitly_live_format, match_threshold) # No candidates, no artist matches
+             # prompt_user_for_choice handles 'S'kip when no candidates and no artist_matches are passed
+             return prompt_user_for_choice(input_artist, input_track, [], [], is_input_explicitly_live_format, match_threshold)
         else:
              return None
 
-    logging.info(f"Found {len(candidate_artist_entries)} entries potentially matching artist '{input_artist}'. Matching title '{input_track}'.")
+    logging.info(f"Found {len(candidate_artist_entries)} entries potentially matching artist '{input_artist}'. Now matching title '{input_track}'.")
 
     # --- Score all potential title matches for the found artists ---
     scored_candidates = [] # List to hold qualified candidates' dictionaries
-    all_title_misses = [] # Store tuples: (final_score, entry_dict)
+    all_title_misses_for_logging = [] # Store tuples: (final_score, entry_dict) for logging
 
     for entry in candidate_artist_entries:
         title_meta_score = fuzz.ratio(norm_input_title_match_str, entry["norm_title_stripped"]) if entry["norm_title_stripped"] else -1
@@ -733,106 +924,136 @@ def find_track_in_index(input_artist, input_track, match_threshold, live_penalty
 
         current_base_score = max(title_meta_score, filename_score_for_title)
 
-        # Consider slightly below threshold to allow bonuses/penalties
-        if current_base_score >= (match_threshold - 15) :
+        # Consider slightly below threshold to allow bonuses/penalties to bring it up
+        if current_base_score >= (match_threshold - 15):
              adjusted_score = current_base_score
+             # Apply artist match bonus (more bonus for exact artist match)
              if entry["norm_artist_stripped"] == norm_input_artist_match_str:
-                 artist_bonus = 1.0
+                 artist_bonus = 1.0 # Small flat bonus for exact artist on a candidate
              else:
+                 # Weighted bonus based on how well the library artist matched input artist (already substring matched)
                  library_artist_match_to_input_artist = fuzz.ratio(norm_input_artist_match_str, entry["norm_artist_stripped"])
-                 artist_bonus = (library_artist_match_to_input_artist / 100.0) * 1.5
+                 artist_bonus = (library_artist_match_to_input_artist / 100.0) * 0.5 # Scaled bonus
              adjusted_score += artist_bonus
-             adjusted_score = min(adjusted_score, 100.0)
+             adjusted_score = min(adjusted_score, 100.0) # Cap score at 100
 
              original_score_before_penalty = adjusted_score
              penalty_applied = False
              if not is_input_explicitly_live_format and entry["entry_is_live"]:
                  adjusted_score *= live_penalty_factor
                  penalty_applied = True
-                 logging.debug(f"      Applied Penalty: {original_score_before_penalty:.1f} * {live_penalty_factor} -> {adjusted_score:.1f}")
+                 logging.debug(f"      Applied Live Penalty: {original_score_before_penalty:.1f} * {live_penalty_factor} -> {adjusted_score:.1f}")
 
+             # Store temporary scores on the entry dictionary for sorting and display in prompt
              entry['_current_score_before_prompt'] = adjusted_score
              entry['_original_score'] = original_score_before_penalty
              entry['_penalty_applied'] = penalty_applied
 
-             # Store all evaluated candidates initially
              scored_candidates.append(entry)
-             # We filter based on threshold later before deciding mode
-
         else:
-            all_title_misses.append((current_base_score, entry)) # Track low base scores too
+            all_title_misses_for_logging.append((current_base_score, entry)) # Track low base scores too
             logging.debug(f"    Candidate Base Score Too Low (Base: {current_base_score:.1f}, Path: {entry['path']})")
 
     # --- Filter and Decide Action ---
-
-    # Keep only candidates meeting threshold *after* scoring/penalty
+    # Keep only candidates meeting threshold *after* all scoring/penalties
     qualified_candidates = [c for c in scored_candidates if c.get('_current_score_before_prompt', -1) >= match_threshold]
     qualified_candidates.sort(key=lambda x: x.get('_current_score_before_prompt', -1), reverse=True)
 
     if not qualified_candidates:
-        # No candidates met the final threshold
-        log_msg = f"NO MATCH: No tracks found for '{input_artist} - {input_track}' meeting threshold {match_threshold} after scoring."
+        # No candidates met the final threshold for a direct track match.
+        log_msg = f"NO DIRECT MATCH: No tracks found for '{input_artist} - {input_track}' meeting threshold {match_threshold} after scoring."
         # Log the best overall miss (from *all* candidates attempted)
-        all_misses_combined = all_title_misses + [ (c['_current_score_before_prompt'], c) for c in scored_candidates if c not in qualified_candidates ]
-        if all_misses_combined:
-            all_misses_combined.sort(key=lambda x: x[0], reverse=True)
-            best_miss_score, best_miss_entry = all_misses_combined[0]
-            log_msg += (f"\n     -> Closest Miss: '{best_miss_entry['artist']} - {best_miss_entry['title']}' (Final Score: {best_miss_score:.1f}, Path: {best_miss_entry['path']})")
+        all_misses_combined_for_logging = all_title_misses_for_logging + \
+                                           [(c['_current_score_before_prompt'], c) for c in scored_candidates if c not in qualified_candidates]
+        if all_misses_combined_for_logging:
+            all_misses_combined_for_logging.sort(key=lambda x: x[0], reverse=True)
+            best_miss_score, best_miss_entry = all_misses_combined_for_logging[0]
+            log_msg += (f"\n     -> Closest Miss (overall): '{best_miss_entry['artist']} - {best_miss_entry['title']}' "
+                        f"(Final Score: {best_miss_score:.1f}, Path: {best_miss_entry['path']})")
         logging.warning(log_msg)
 
-        if INTERACTIVE_MODE:
+        if INTERACTIVE_MODE and candidate_artist_entries: # We have other tracks by this artist
             print(colorize(f"\nNo direct match found meeting threshold for '{input_artist} - {input_track}'.", Colors.YELLOW))
-            # Pass *all* scored candidates (even below threshold) for potential display context, but prompt handles filtering
-            return prompt_user_for_choice(input_artist, input_track, scored_candidates, candidate_artist_entries, is_input_explicitly_live_format, match_threshold)
-        else:
+            # Offer album selection using all tracks by the artist we found earlier
+            chosen_entry_via_album = prompt_album_selection_or_skip(
+                input_artist,
+                input_track,
+                candidate_artist_entries, # All library entries matching the input artist name
+                is_input_explicitly_live_format, # Pass this for context, though album prompt may not use it directly
+                match_threshold # Pass for consistency, though album prompt might ignore it for its own listings
+            )
+            # chosen_entry_via_album will be a track dict or None
+            # If it's a dict, it's already a library entry, no need to pop temporary scores as they weren't added
+            return chosen_entry_via_album
+        elif INTERACTIVE_MODE: # No artist context or some other issue
+             print(colorize(f"\nNo direct match found for '{input_artist} - {input_track}' and no other tracks by this artist in library context.", Colors.YELLOW))
+             # Fallback to the standard prompt_user_for_choice which will only offer Skip or Random (if artist_matches is non-empty)
+             # Here, scored_candidates will be empty (or sub-threshold), so prompt will show few/no numbered choices.
+             return prompt_user_for_choice(input_artist, input_track, scored_candidates, candidate_artist_entries, is_input_explicitly_live_format, match_threshold)
+        else: # Not interactive
             return None
 
-    # We have at least one QUALIFIED candidate
+    # --- We have at least one QUALIFIED candidate for a direct track match ---
+    # (This part means qualified_candidates is not empty)
+
+    best_overall_match = None # Initialize
 
     # If NOT interactive OR only ONE qualified candidate: Use automatic logic
     if not INTERACTIVE_MODE or len(qualified_candidates) == 1:
-         logging.debug("Using Automatic/Single Qualified Candidate Logic.")
-         best_live_candidate = next((c for c in qualified_candidates if c['entry_is_live']), None)
-         best_non_live_candidate = next((c for c in qualified_candidates if not c['entry_is_live']), None)
-         best_overall_match = qualified_candidates[0] # Default to absolute best score
+         logging.debug("Using Automatic/Single Qualified Candidate Logic for direct track match.")
+         
+         # Refined automatic selection logic:
+         # Prioritize based on input live format, then best score.
+         best_candidate_of_correct_live_type = None
+         best_candidate_of_other_live_type = None
 
-         if is_input_explicitly_live_format:
-             if best_live_candidate: best_overall_match = best_live_candidate
-             elif best_non_live_candidate:
-                 logging.warning(f"AUTO/SINGLE: Input Live, only Studio found/selected: {best_non_live_candidate['path']} (Score: {best_non_live_candidate['_current_score_before_prompt']:.1f})")
-                 best_overall_match = best_non_live_candidate
-         else: # Input not live
-             if best_non_live_candidate:
-                 best_overall_match = best_non_live_candidate
-                 if best_live_candidate and best_live_candidate['_current_score_before_prompt'] > best_non_live_candidate['_current_score_before_prompt'] + 5:
-                     logging.warning(f"AUTO/SINGLE: Studio input, but LIVE higher post-penalty. OVERRIDING: {best_live_candidate['path']} ({best_live_candidate['_current_score_before_prompt']:.1f} vs {best_non_live_candidate['_current_score_before_prompt']:.1f})")
-                     best_overall_match = best_live_candidate
-             elif best_live_candidate:
-                 logging.warning(f"AUTO/SINGLE: Input Studio, only Live found/selected: {best_live_candidate['path']} (Score: {best_live_candidate['_current_score_before_prompt']:.1f})")
-                 best_overall_match = best_live_candidate
+         for cand in qualified_candidates:
+             if cand['entry_is_live'] == is_input_explicitly_live_format:
+                 if best_candidate_of_correct_live_type is None or \
+                    cand['_current_score_before_prompt'] > best_candidate_of_correct_live_type['_current_score_before_prompt']:
+                     best_candidate_of_correct_live_type = cand
+             else:
+                 if best_candidate_of_other_live_type is None or \
+                    cand['_current_score_before_prompt'] > best_candidate_of_other_live_type['_current_score_before_prompt']:
+                     best_candidate_of_other_live_type = cand
+        
+         if best_candidate_of_correct_live_type:
+             best_overall_match = best_candidate_of_correct_live_type
+             logging.info(f"AUTO/SINGLE: Selected matching live type. InputLive: {is_input_explicitly_live_format}, CandLive: {best_overall_match['entry_is_live']}")
+         elif best_candidate_of_other_live_type:
+             best_overall_match = best_candidate_of_other_live_type
+             logging.warning(f"AUTO/SINGLE: Selected different live type (no matching type found). InputLive: {is_input_explicitly_live_format}, CandLive: {best_overall_match['entry_is_live']}")
+         else: # Should not happen if qualified_candidates is not empty
+             best_overall_match = qualified_candidates[0] # Fallback to highest score
+             logging.error("AUTO/SINGLE: Logic error in type matching, fell back to highest score.")
 
-         final_score = best_overall_match['_current_score_before_prompt']
-         logging.info(f"MATCHED (Auto/Single): '{input_artist} - {input_track}' -> '{best_overall_match['path']}' Score: {final_score:.1f}")
-         best_overall_match.pop('_current_score_before_prompt', None)
-         best_overall_match.pop('_original_score', None)
-         best_overall_match.pop('_penalty_applied', None)
-         return best_overall_match
 
-    else: # Interactive mode AND multiple QUALIFIED candidates
-        logging.info(f"INTERACTIVE: Multiple ({len(qualified_candidates)}) qualified candidates found for '{input_artist} - {input_track}'. Prompting user.")
+         if best_overall_match: # Ensure we have a selection
+             final_score = best_overall_match.get('_current_score_before_prompt', -1)
+             logging.info(f"MATCHED (Auto/Single Direct): '{input_artist} - {input_track}' -> '{best_overall_match['path']}' Score: {final_score:.1f}")
+             # Clean up temporary keys added for scoring/prompting
+             for key_to_pop in ['_current_score_before_prompt', '_original_score', '_penalty_applied']:
+                 best_overall_match.pop(key_to_pop, None)
+             return best_overall_match
+         else: # Should ideally not be reached if qualified_candidates was non-empty
+             logging.error("AUTO/SINGLE: No best_overall_match selected despite qualified_candidates existing.")
+             return None
+
+
+    else: # Interactive mode AND multiple QUALIFIED direct track candidates
+        logging.info(f"INTERACTIVE: Multiple ({len(qualified_candidates)}) qualified direct track matches found for '{input_artist} - {input_track}'. Prompting user.")
         chosen_entry = prompt_user_for_choice(
             input_artist=input_artist,
             input_track=input_track,
             candidates=qualified_candidates, # Pass only those meeting threshold
-            artist_matches=candidate_artist_entries, # Full list for random
+            artist_matches=candidate_artist_entries, # Full list for random choice by artist
             input_live_format=is_input_explicitly_live_format,
             threshold=match_threshold
         )
-        if chosen_entry: # Clean up temp keys if user didn't skip
-            chosen_entry.pop('_current_score_before_prompt', None)
-            chosen_entry.pop('_original_score', None)
-            chosen_entry.pop('_penalty_applied', None)
-        return chosen_entry # Can be dict or None
+        if chosen_entry: # Clean up temp keys if user didn't skip and chose a candidate
+            for key_to_pop in ['_current_score_before_prompt', '_original_score', '_penalty_applied']:
+                chosen_entry.pop(key_to_pop, None)
+        return chosen_entry # Can be a track dict (from direct choice or random) or None (if skipped)
 
 # --- Playlist Reading ---
 def read_playlist_file(playlist_file_path):
