@@ -1,46 +1,76 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext # Use scrolledtext for better logging
-import threading
-import queue # For thread-safe GUI updates from logger
-import logging # To configure logging handler
-import sys
-import io # To capture stdout/stderr
+# --- playlist_maker_gui.py ---
 
-# Assuming playlist_maker.py is in the same directory or Python path
-# Assuming playlist_maker.py is in the same directory or Python path
-from playlist_maker import main as pm_main          # Import the main function
-from playlist_maker import Colors                  # Import Colors
-from playlist_maker import DEFAULT_SCAN_LIBRARY, \
-                           DEFAULT_OUTPUT_DIR, \
-                           DEFAULT_MPD_MUSIC_DIR_CONF # Import defaults
-# You might need to import other constants used in the GUI if playlist_maker.py defines them
+import tkinter as tk
+from tkinter import ttk
+from tkinter import filedialog, messagebox, scrolledtext
+import threading
+import queue
+import logging
+import sys
+import os
+from datetime import datetime # Keep this for Option B
+
+from playlist_maker import main as pm_main
+from playlist_maker import Colors # Still useful for other GUI elements potentially
+from playlist_maker import (
+    DEFAULT_SCAN_LIBRARY, DEFAULT_OUTPUT_DIR, DEFAULT_MPD_MUSIC_DIR_CONF,
+    DEFAULT_MPD_PLAYLIST_DIR_CONF,
+    DEFAULT_MATCH_THRESHOLD, DEFAULT_LIVE_PENALTY_FACTOR
+)
 
 class TkinterLogHandler(logging.Handler):
-    """Custom logging handler to redirect logs to a Tkinter Text/ScrolledText widget."""
+    """Custom logging handler to redirect logs to a Tkinter Text/ScrolledText widget with colors."""
     def __init__(self, text_widget):
         super().__init__()
         self.text_widget = text_widget
         self.queue = queue.Queue()
-        # Start a poller to process messages from the queue
+
+        # Define color tags in the text widget
+        self.text_widget.tag_config("DEBUG", foreground="gray")
+        self.text_widget.tag_config("INFO", foreground="black")
+        self.text_widget.tag_config("WARNING", foreground="#E69138") # Orange
+        self.text_widget.tag_config("ERROR", foreground="red", font=("TkDefaultFont", 9, "bold"))
+        self.text_widget.tag_config("CRITICAL", foreground="white", background="red", font=("TkDefaultFont", 9, "bold")) # Corrected from my last version
+        self.text_widget.tag_config("TIMESTAMP", foreground="#512E5F") # Dark Purple
+
         self.text_widget.after(100, self.poll_log_queue)
 
-    def emit(self, record):
-        msg = self.format(record)
-        self.queue.put(msg) # Put log message into queue
+    def emit(self, record: logging.LogRecord): # Correctly expects LogRecord
+        self.queue.put(record) # Puts the LogRecord object on the queue
 
     def poll_log_queue(self):
         try:
-            while True: # Process all messages currently in queue
-                record = self.queue.get(block=False)
+            while True:
+                record = self.queue.get(block=False) # 'record' IS a LogRecord here
+
+                timestamp_str = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
+                log_message = record.getMessage()
+                level_name_tag = record.levelname
+
+                effective_tag = level_name_tag
+                # Check if the tag for this level name is configured.
+                # A simpler check might be if tag_cget returns a non-empty string for 'foreground'.
+                # However, just trying to use it is fine as Tkinter won't error if tag is undefined, just won't apply style.
+                # For robustness, we could pre-check or have a default.
+                if level_name_tag not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+                    # If it's an unknown level, use INFO styling as a fallback
+                    effective_tag = "INFO"
+                    # Log only once about unknown tags to avoid flooding
+                    if not hasattr(self, '_warned_unknown_tags'): self._warned_unknown_tags = set()
+                    if level_name_tag not in self._warned_unknown_tags:
+                        logging.debug(f"GUI Log Handler: Unknown log level '{level_name_tag}' received, using INFO style.")
+                        self._warned_unknown_tags.add(level_name_tag)
+
                 self.text_widget.configure(state='normal')
-                self.text_widget.insert(tk.END, record + '\n')
+                self.text_widget.insert(tk.END, f"{timestamp_str} - ", "TIMESTAMP")
+                self.text_widget.insert(tk.END, f"{record.levelname}", effective_tag) # Apply level tag
+                self.text_widget.insert(tk.END, f" - {log_message}\n")
                 self.text_widget.configure(state='disabled')
-                self.text_widget.see(tk.END) # Scroll to the end
-                self.text_widget.update_idletasks() # Ensure GUI updates
+                self.text_widget.see(tk.END)
+                self.text_widget.update_idletasks()
         except queue.Empty:
-            pass # Queue is empty
+            pass
         finally:
-            # Reschedule the poller
             self.text_widget.after(100, self.poll_log_queue)
 
 class PlaylistMakerGUI:
@@ -48,11 +78,10 @@ class PlaylistMakerGUI:
         self.root = root_window
         self.root.title("Playlist Maker GUI")
 
-        # --- Main Frame ---
         main_frame = tk.Frame(self.root, padx=10, pady=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # --- Input Frame ---
+        # ... (Input Frame and Options Frame setup as in your file) ...
         input_frame = tk.LabelFrame(main_frame, text="Paths & Files", padx=10, pady=10)
         input_frame.pack(fill=tk.X, pady=(0,10))
 
@@ -61,72 +90,107 @@ class PlaylistMakerGUI:
         self.playlist_file_entry = tk.Entry(input_frame, width=60)
         self.playlist_file_entry.grid(row=row_idx, column=1, sticky=tk.EW, padx=5, pady=2)
         tk.Button(input_frame, text="Browse...", command=self.browse_playlist).grid(row=row_idx, column=2, padx=5, pady=2)
-        input_frame.columnconfigure(1, weight=1) # Make entry expand
+        input_frame.columnconfigure(1, weight=1)
 
         row_idx += 1
         tk.Label(input_frame, text="Music Library Path:").grid(row=row_idx, column=0, sticky=tk.W, padx=5, pady=2)
         self.library_path_entry = tk.Entry(input_frame, width=60)
+        self.library_path_entry.insert(0, os.path.expanduser(DEFAULT_SCAN_LIBRARY))
         self.library_path_entry.grid(row=row_idx, column=1, sticky=tk.EW, padx=5, pady=2)
-        self.library_path_entry.insert(0, DEFAULT_SCAN_LIBRARY) # Pre-fill with default
         tk.Button(input_frame, text="Browse...", command=self.browse_library).grid(row=row_idx, column=2, padx=5, pady=2)
 
         row_idx += 1
         tk.Label(input_frame, text="MPD Music Directory:").grid(row=row_idx, column=0, sticky=tk.W, padx=5, pady=2)
         self.mpd_music_dir_entry = tk.Entry(input_frame, width=60)
+        self.mpd_music_dir_entry.insert(0, os.path.expanduser(DEFAULT_MPD_MUSIC_DIR_CONF))
         self.mpd_music_dir_entry.grid(row=row_idx, column=1, sticky=tk.EW, padx=5, pady=2)
-        self.mpd_music_dir_entry.insert(0, DEFAULT_MPD_MUSIC_DIR_CONF)
         tk.Button(input_frame, text="Browse...", command=lambda: self.browse_directory(self.mpd_music_dir_entry)).grid(row=row_idx, column=2, padx=5, pady=2)
-
 
         row_idx += 1
         tk.Label(input_frame, text="Output Directory:").grid(row=row_idx, column=0, sticky=tk.W, padx=5, pady=2)
         self.output_dir_entry = tk.Entry(input_frame, width=60)
+        self.output_dir_entry.insert(0, DEFAULT_OUTPUT_DIR) # Already relative, no expanduser needed here for default
         self.output_dir_entry.grid(row=row_idx, column=1, sticky=tk.EW, padx=5, pady=2)
-        self.output_dir_entry.insert(0, DEFAULT_OUTPUT_DIR) # Pre-fill
         tk.Button(input_frame, text="Browse...", command=self.browse_output).grid(row=row_idx, column=2, padx=5, pady=2)
 
-
-        # --- Options Frame (Example - can be expanded) ---
+        # --- Options Frame ---
         options_frame = tk.LabelFrame(main_frame, text="Options", padx=10, pady=10)
         options_frame.pack(fill=tk.X, pady=(0,10))
 
-        self.interactive_var = tk.BooleanVar()
-        tk.Checkbutton(options_frame, text="Run in Console Interactive Mode (CLI Prompts)", variable=self.interactive_var).pack(anchor=tk.W)
-        # Add more options here: threshold, log level dropdown, etc.
-        # For now, we'll rely on playlist_maker.conf for other settings
+        matching_options_frame = tk.Frame(options_frame)
+        matching_options_frame.pack(fill=tk.X)
+
+        tk.Label(matching_options_frame, text="Match Threshold (0-100):").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.threshold_var = tk.IntVar(value=DEFAULT_MATCH_THRESHOLD)
+        self.threshold_spinbox = tk.Spinbox(matching_options_frame, from_=0, to=100, textvariable=self.threshold_var, width=5)
+        self.threshold_spinbox.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+
+        tk.Label(matching_options_frame, text="Live Penalty (0.0-1.0):").grid(row=0, column=2, sticky=tk.W, padx=(20,5), pady=2)
+        self.live_penalty_var = tk.DoubleVar(value=DEFAULT_LIVE_PENALTY_FACTOR)
+        self.live_penalty_spinbox = tk.Spinbox(matching_options_frame, from_=0.0, to=1.0, increment=0.05, format="%.2f", textvariable=self.live_penalty_var, width=5)
+        self.live_penalty_spinbox.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+
+        general_options_frame = tk.Frame(options_frame)
+        general_options_frame.pack(fill=tk.X, pady=(5,0))
+
+        self.interactive_var = tk.BooleanVar() # Defaults to False
+        tk.Checkbutton(general_options_frame, text="Use Console Interactive Mode (CLI Prompts)", variable=self.interactive_var).grid(row=0, column=0, sticky=tk.W, columnspan=2, pady=2)
+
+        self.copy_to_mpd_var = tk.BooleanVar() # Defaults to False
+        self.mpd_copy_check = tk.Checkbutton(general_options_frame, text="Copy to MPD Playlist Dir:", variable=self.copy_to_mpd_var, command=self.toggle_mpd_path_entry)
+        self.mpd_copy_check.grid(row=1, column=0, sticky=tk.W, pady=2)
+
+        self.mpd_playlist_dir_entry = tk.Entry(general_options_frame, width=45, state=tk.DISABLED)
+        self.mpd_playlist_dir_entry.insert(0, os.path.expanduser(DEFAULT_MPD_PLAYLIST_DIR_CONF))
+        self.mpd_playlist_dir_entry.grid(row=1, column=1, sticky=tk.EW, padx=5, pady=2)
+        self.mpd_playlist_browse_button = tk.Button(general_options_frame, text="Browse...", command=lambda: self.browse_directory(self.mpd_playlist_dir_entry), state=tk.DISABLED)
+        self.mpd_playlist_browse_button.grid(row=1, column=2, padx=5, pady=2)
+        general_options_frame.columnconfigure(1, weight=1)
+
+        logging_options_frame = tk.Frame(options_frame)
+        logging_options_frame.pack(fill=tk.X, pady=(5,0))
+        tk.Label(logging_options_frame, text="File Log Level:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.log_level_var = tk.StringVar(value="INFO")
+        self.log_level_combo = ttk.Combobox(logging_options_frame, textvariable=self.log_level_var,
+                                            values=["DEBUG", "INFO", "WARNING", "ERROR"], state="readonly", width=10)
+        self.log_level_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
 
 
-        # --- Action Frame ---
         action_frame = tk.Frame(main_frame, pady=5)
         action_frame.pack(fill=tk.X)
         self.generate_button = tk.Button(action_frame, text="Generate Playlist", command=self.run_generate_playlist_thread, width=20, height=2)
         self.generate_button.pack(pady=5)
 
-        # --- Log Area Frame ---
         log_frame = tk.LabelFrame(main_frame, text="Log Output", padx=10, pady=10)
         log_frame.pack(fill=tk.BOTH, expand=True)
-
         self.log_text_area = scrolledtext.ScrolledText(log_frame, height=15, width=80, state='disabled', wrap=tk.WORD)
         self.log_text_area.pack(fill=tk.BOTH, expand=True)
 
-        # Setup logging to redirect to our text widget
+        # Call setup_gui_logging which creates and configures TkinterLogHandler
         self.setup_gui_logging()
 
-    def setup_gui_logging(self):
-        """Redirects Python's logging to the Tkinter text area."""
-        gui_log_handler = TkinterLogHandler(self.log_text_area)
-        # You can set a specific format for the GUI log messages if desired
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        gui_log_handler.setFormatter(formatter)
-        gui_log_handler.setLevel(logging.INFO) # Or DEBUG for more verbosity in GUI
+    def toggle_mpd_path_entry(self):
+        if self.copy_to_mpd_var.get():
+            self.mpd_playlist_dir_entry.config(state=tk.NORMAL)
+            self.mpd_playlist_browse_button.config(state=tk.NORMAL)
+        else:
+            self.mpd_playlist_dir_entry.config(state=tk.DISABLED)
+            self.mpd_playlist_browse_button.config(state=tk.DISABLED)
 
-        # Get the root logger from playlist_maker.py (or the global root logger)
-        # It's better if playlist_maker.py's setup_logging defines a named logger
-        # and we add our handler to that. For now, add to root.
-        logging.getLogger().addHandler(gui_log_handler)
-        # Ensure CLI's console logger doesn't conflict or duplicate too much
-        # This is tricky; the best way is to make playlist_maker.py aware if it's run by GUI
-        # For now, just adding handler.
+    def setup_gui_logging(self):
+        """Redirects Python's logging to the Tkinter text area using custom formatting."""
+        gui_log_handler = TkinterLogHandler(self.log_text_area) # Creates handler, which sets up tags
+        # NO formatter is set on this handler externally, as it does its own.
+        gui_log_handler.setLevel(logging.DEBUG) # Handler itself will process DEBUG and above
+
+        root_logger = logging.getLogger()
+        # Prevent adding handler multiple times if setup_gui_logging might be called again
+        if not any(isinstance(h, TkinterLogHandler) for h in root_logger.handlers):
+            root_logger.addHandler(gui_log_handler)
+
+        # Ensure the root logger itself will pass messages of the desired level.
+        if root_logger.level == 0 or root_logger.level > logging.DEBUG: # Level 0 is NOTSET (effectively passes all)
+             root_logger.setLevel(logging.DEBUG)
 
 
     def browse_playlist(self):
@@ -157,102 +221,96 @@ class PlaylistMakerGUI:
             return
 
         self.log_text_area.configure(state='normal')
-        self.log_text_area.delete('1.0', tk.END) # Clear previous logs
-        self.log_text_area.insert(tk.END, "Starting playlist generation...\n")
-        self.log_text_area.insert(tk.END, "This may take a while for large libraries (scan step).\n")
-        self.log_text_area.insert(tk.END, "Check console if interactive mode is enabled and prompts appear there.\n")
+        self.log_text_area.delete('1.0', tk.END)
+        # These initial messages will also be picked up by TkinterLogHandler if root logger level is low enough
+        logging.info("GUI: Starting playlist generation...")
+        logging.info("GUI: This may take a while for large libraries (scan step).")
+        if self.interactive_var.get():
+            logging.info("GUI: CONSOLE INTERACTIVE MODE is enabled. Prompts will appear in the terminal.")
         self.log_text_area.configure(state='disabled')
 
         self.generate_button.config(text="Generating...", state=tk.DISABLED)
-
-        # Start generation in a new thread
         thread = threading.Thread(target=self.execute_playlist_maker, daemon=True)
         thread.start()
 
-        # Check thread status periodically (optional, for more complex UI updates)
-        # self.root.after(100, lambda: self.check_thread(thread))
-
     def execute_playlist_maker(self):
-        """Constructs args and calls the main playlist_maker script logic."""
         try:
-            # Construct argv for playlist_maker.main()
-            argv = [self.playlist_file_entry.get()] # Positional argument first
+            argv = [self.playlist_file_entry.get()]
 
-            lib_path = self.library_path_entry.get()
-            if lib_path: argv.extend(["--library", lib_path])
+            for arg_name, entry_widget in [
+                ("--library", self.library_path_entry),
+                ("--mpd-music-dir", self.mpd_music_dir_entry),
+                ("--output-dir", self.output_dir_entry)
+            ]:
+                path = entry_widget.get()
+                if path.strip(): argv.extend([arg_name, path.strip()])
 
-            mpd_dir = self.mpd_music_dir_entry.get()
-            if mpd_dir: argv.extend(["--mpd-music-dir", mpd_dir])
+            threshold = self.threshold_var.get()
+            argv.extend(["--threshold", str(threshold)])
 
-            out_dir = self.output_dir_entry.get()
-            if out_dir: argv.extend(["--output-dir", out_dir])
+            live_penalty = self.live_penalty_var.get()
+            argv.extend(["--live-penalty", f"{live_penalty:.2f}"])
 
             if self.interactive_var.get():
                 argv.append("--interactive")
 
-            # Add more args based on other GUI fields if you add them
-            # e.g., argv.extend(["--threshold", self.threshold_entry.get()])
+            if self.copy_to_mpd_var.get():
+                mpd_playlist_path = self.mpd_playlist_dir_entry.get()
+                if mpd_playlist_path.strip():
+                    argv.extend(["--mpd-playlist-dir", mpd_playlist_path.strip()])
+                else:
+                    argv.append("--mpd-playlist-dir")
 
-            # Inform the user what's being run
-            # Cannot use logger here directly as it's in another thread.
-            # Use the queue mechanism by calling log_to_gui
-            self.log_to_gui(f"Running with args: {argv}", level="INFO")
+            log_level = self.log_level_var.get()
+            if log_level: argv.extend(["--log-level", log_level])
 
-            # Call the main function from playlist_maker.py
-            # This will use its own config file loading and default handling for args not specified by GUI
-            pm_main(argv_list=argv)
+            logging.info(f"GUI: Running backend with args: {argv}")
+            result = pm_main(argv_list=argv)
 
-            self.log_to_gui("Playlist generation process completed successfully!", level="INFO", color=Colors.GREEN)
-            # No need for messagebox on success if logs are clear.
-            # messagebox.showinfo("Success", "Playlist generation process finished!")
+            if result and result.get("success"):
+                logging.info("GUI: Playlist generation process completed successfully!")
+                skipped_tracks = result.get("skipped_tracks", [])
+                if skipped_tracks:
+                    logging.warning("\n--- Skipped/Missing Tracks ---")
+                    for item in skipped_tracks:
+                        logging.warning(f"  - {item}") # These will be orange
+                    logging.warning(f"Total skipped/missing: {len(skipped_tracks)}. See missing-tracks.txt if saved.")
+                else:
+                    logging.info("GUI: All tracks from input were matched and included!")
+            elif result and result.get("error"):
+                error_msg = result.get("error", "Unknown error from playlist maker.")
+                logging.error(f"GUI: Playlist maker reported an error: {error_msg}") # Red & bold
+                self.root.after(0, lambda err_val=error_msg: messagebox.showerror("Playlist Maker Error", err_val))
+            else:
+                logging.critical("GUI: Received unexpected or no result from playlist maker process.") # White on Red & bold
+                self.root.after(0, lambda: messagebox.showerror("Process Error", "Playlist maker did not return a clear status."))
 
-        # In playlist-maker-gui.py, inside the `execute_playlist_maker` method's `except Exception as e:` block:
-
+        except ValueError as ve:
+            logging.error(f"GUI: Error from playlist maker (ValueError): {ve}")
+            self.root.after(0, lambda err_val=str(ve): messagebox.showerror("Playlist Maker Error", err_val))
         except Exception as e:
-            error_msg_for_log = f"Error during playlist generation: {e}"
-            # Logging an exception object with exc_info=True gives traceback in log file
-            logging.error(error_msg_for_log, exc_info=True) # Use Python's logger for GUI errors too
-
-            # To ensure log_to_gui gets called from the GUI's main thread if it updates UI
-            self.root.after(0, lambda msg=error_msg_for_log: self.log_to_gui(msg, level="ERROR")) # Pass a copy of the message
-
-            # Capture the current string value of e for the deferred messagebox
-            error_str_for_messagebox = str(e)
-            self.root.after(0, lambda err_val=error_str_for_messagebox: messagebox.showerror("Generation Error", err_val))
+            logging.error(f"GUI: Unexpected error during playlist generation: {e}", exc_info=True)
+            self.root.after(0, lambda err_val=str(e): messagebox.showerror("Generation Error", err_val))
         finally:
-            # Re-enable button in the main thread
             self.root.after(0, lambda: self.generate_button.config(text="Generate Playlist", state=tk.NORMAL))
-
-    def log_to_gui(self, message, level="INFO", color=None):
-        """Helper to put messages onto the log handler's queue from this thread."""
-        # This mimics how the logging handler would do it
-        # Ideally, the playlist_maker's own logging should be fully captured.
-        # This is more for direct GUI status updates from the GUI thread.
-        if hasattr(self, 'log_handler_queue'): # Ensure handler and queue exist
-            formatted_message = f"{level}: {message}"
-            if color:
-                 # The TkinterLogHandler does not handle color directly from here.
-                 # Color needs to be embedded if logger not configured to strip/handle it.
-                 # Or, TkinterLogHandler could be enhanced to use tags for colors.
-                 # For now, it will be plain from here.
-                 pass
-            self.log_handler_queue.put(formatted_message)
-        else: # Fallback if handler not fully set up yet
-             self.root.after(0, lambda: self._direct_log_insert(f"{level}: {message}\n"))
-
-    def _direct_log_insert(self, message): # Internal helper for direct insertion
-        self.log_text_area.configure(state='normal')
-        self.log_text_area.insert(tk.END, message)
-        self.log_text_area.configure(state='disabled')
-        self.log_text_area.see(tk.END)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(levelname)s (%(name)s) - %(message)s',
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
+    logging.info("GUI_MAIN: Initializing PlaylistMakerGUI...")
+
     root = tk.Tk()
     app = PlaylistMakerGUI(root)
-    # Store the queue for log_to_gui if handler created
-    for handler in logging.getLogger().handlers:
-         if isinstance(handler, TkinterLogHandler):
-             app.log_handler_queue = handler.queue
-             break
-    root.mainloop()
+
+    logging.info("GUI_MAIN: Starting Tkinter main loop.")
+    try:
+        root.mainloop()
+    except KeyboardInterrupt:
+        logging.info("GUI_MAIN: KeyboardInterrupt received, shutting down GUI.")
+        print("\nPlaylist Maker GUI closed via Ctrl+C.")
+    finally:
+        logging.info("GUI_MAIN: Tkinter main loop finished or interrupted.")

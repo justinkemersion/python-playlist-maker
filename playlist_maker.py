@@ -318,6 +318,156 @@ def get_file_metadata(file_path_obj):
 
     return artist, title, album, duration
 
+import re
+from datetime import datetime
+import os # For os.path.splitext
+import logging # Assuming logging is configured
+
+# Make sure this function is defined in your playlist_maker.py
+
+def format_output_filename(format_string, raw_basename, now, default_extension=".m3u"):
+    """
+    Formats the output filename based on a format string, raw basename, and current time.
+    """
+    if format_string is None: # Use default logic if no format string is provided
+        sanitized_base = re.sub(r'[^a-zA-Z0-9]+', '_', raw_basename).strip('_')
+        date_str = now.strftime("%Y-%m-%d")
+        filename_stem = f"{sanitized_base}_{date_str}" if sanitized_base else f"playlist_{date_str}"
+        return f"{filename_stem}{default_extension}"
+
+    # --- Helper for {basename:transforms} ---
+    def process_basename(current_basename, transform_codes_str):
+        processed_name = current_basename
+        transformed_separator = False # Flag to ensure only one separator transform is applied
+
+        # 1. Separator Transformations (order of precedence: p, then s, then _)
+        if 'p' in transform_codes_str: # Spacify: Convert common separators to space
+            processed_name = re.sub(r'[-_.]+', ' ', processed_name)
+            processed_name = re.sub(r'\s+', ' ', processed_name).strip() # Consolidate spaces
+            transformed_separator = True
+        elif 's' in transform_codes_str and not transformed_separator: # Hyphenate
+            processed_name = re.sub(r'[\s_.]+', '-', processed_name) # Spaces, underscores, dots to hyphen
+            processed_name = re.sub(r'-+', '-', processed_name).strip('-') # Consolidate hyphens
+            transformed_separator = True
+        elif '_' in transform_codes_str and not transformed_separator: # Underscorify
+            processed_name = re.sub(r'[\s-.]+', '_', processed_name) # Spaces, hyphens, dots to underscore
+            processed_name = re.sub(r'_+', '_', processed_name).strip('_') # Consolidate underscores
+            transformed_separator = True
+        
+        transformed_case = False # Flag to ensure only one case transform is applied
+        # 2. Case Transformations (order of precedence: c, then u, then l)
+        #    Operates on the (potentially separator-transformed) name
+        if 'c' in transform_codes_str: # Capitalize words
+            # Split by space, capitalize, then join. Handles multiple spaces if they exist after sep transform.
+            processed_name = ' '.join(word.capitalize() for word in processed_name.split(' ') if word) # Avoid empty strings from multiple spaces
+            transformed_case = True
+        elif 'u' in transform_codes_str and not transformed_case: # Uppercase
+            processed_name = processed_name.upper()
+            transformed_case = True
+        elif 'l' in transform_codes_str and not transformed_case: # Lowercase
+            processed_name = processed_name.lower()
+            transformed_case = True
+            
+        return processed_name
+
+    # --- Apply transformations ---
+    final_filename_str = format_string
+
+    # Substitute {basename:transforms} or {basename}
+    def basename_replacer(match):
+        # match.group(1) will contain the transform codes like "cp",
+        # or an empty string if no codes are specified (e.g., "{basename}" or "{basename:}").
+        transform_codes = match.group(1) 
+        return process_basename(raw_basename, transform_codes)
+    
+    # This regex matches "{basename}", optionally followed by a colon, 
+    # and then captures the transform codes (possibly empty) into group 1.
+    final_filename_str = re.sub(r'\{basename:?([culps_]*)\}', basename_replacer, final_filename_str)
+
+    # Substitute date/time placeholders like {YYYY}, {MM}, etc.
+    dt_replacements = {
+        'YYYY': now.strftime("%Y"), 'YY': now.strftime("%y"),
+        'MM': now.strftime("%m"), 'DD': now.strftime("%d"),
+        'hh': now.strftime("%H"), 'mm': now.strftime("%M"),
+        'ss': now.strftime("%S"),
+    }
+    for key, value in dt_replacements.items():
+        final_filename_str = final_filename_str.replace(f"{{{key}}}", value)
+
+    # --- Final Sanitization and Extension Handling ---
+    name_part, current_extension = os.path.splitext(final_filename_str)
+    
+    if not current_extension.strip() or current_extension.strip() == ".":
+        current_extension = default_extension
+    
+    invalid_fs_chars_regex = r'[\\/:*?"<>|\x00-\x1F\x7F]'
+    sanitized_name_part = re.sub(invalid_fs_chars_regex, '_', name_part)
+    sanitized_name_part = re.sub(r'_+', '_', sanitized_name_part) # Consolidate multiple underscores
+    sanitized_name_part = sanitized_name_part.strip('_. ') # Remove leading/trailing problematic chars
+
+    if not sanitized_name_part:
+        logging.warning(
+            f"Generated filename format ('{format_string}') for basename ('{raw_basename}') "
+            f"resulted in an empty/invalid stem ('{name_part}' -> '{sanitized_name_part}'). Falling back to default naming."
+        )
+        sanitized_base_fallback = re.sub(r'[^a-zA-Z0-9]+', '_', raw_basename).strip('_')
+        date_str_fallback = now.strftime("%Y-%m-%d")
+        filename_stem_fallback = f"{sanitized_base_fallback}_{date_str_fallback}" if sanitized_base_fallback else f"playlist_{date_str_fallback}"
+        return f"{filename_stem_fallback}{default_extension}"
+
+    return f"{sanitized_name_part}{current_extension}"
+
+    # --- Apply transformations ---
+    final_filename_str = format_string
+
+    # Substitute {basename:transforms} or {basename}
+    def basename_replacer(match):
+        # group(1) is 'basename', group(2) is the optional transform codes
+        transform_codes = match.group(2) if match.group(2) else ""
+        return process_basename(raw_basename, transform_codes)
+    final_filename_str = re.sub(r'\{basename:?([culps_]*)\}', basename_replacer, final_filename_str)
+
+    # Substitute date/time placeholders like {YYYY}, {MM}, etc.
+    dt_replacements = {
+        'YYYY': now.strftime("%Y"), 'YY': now.strftime("%y"),
+        'MM': now.strftime("%m"), 'DD': now.strftime("%d"),
+        'hh': now.strftime("%H"), 'mm': now.strftime("%M"),
+        'ss': now.strftime("%S"),
+    }
+    for key, value in dt_replacements.items():
+        final_filename_str = final_filename_str.replace(f"{{{key}}}", value)
+
+    # --- Final Sanitization and Extension Handling ---
+    name_part, current_extension = os.path.splitext(final_filename_str)
+    
+    # Use default_extension if format string didn't specify one, or if specified is empty
+    if not current_extension.strip() or current_extension.strip() == ".":
+        current_extension = default_extension
+    
+    # Sanitize the name_part: remove invalid FS characters.
+    # We allow spaces, hyphens, underscores, and dots (if not leading/trailing problematically).
+    invalid_fs_chars_regex = r'[\\/:*?"<>|\x00-\x1F\x7F]' # Includes control chars
+    sanitized_name_part = re.sub(invalid_fs_chars_regex, '_', name_part)
+    
+    # Consolidate multiple underscores that might result from substitution
+    sanitized_name_part = re.sub(r'_+', '_', sanitized_name_part)
+    
+    # Remove leading/trailing problematic characters for file names
+    sanitized_name_part = sanitized_name_part.strip('_. ') 
+
+    if not sanitized_name_part: # If sanitization results in empty string
+        logging.warning(
+            f"Generated filename format ('{format_string}') for basename ('{raw_basename}') "
+            f"resulted in an empty/invalid stem ('{name_part}' -> '{sanitized_name_part}'). Falling back to default naming."
+        )
+        # Fallback to a simplified default to ensure a name
+        sanitized_base_fallback = re.sub(r'[^a-zA-Z0-9]+', '_', raw_basename).strip('_')
+        date_str_fallback = now.strftime("%Y-%m-%d")
+        filename_stem = f"{sanitized_base_fallback}_{date_str_fallback}" if sanitized_base_fallback else f"playlist_{date_str_fallback}"
+        return f"{filename_stem}{default_extension}"
+
+    return f"{sanitized_name_part}{current_extension}"
+
 # --- Library Scanning ---
 def scan_library(scan_library_path_str, supported_extensions, live_album_keywords_regex):
     """Scans the library path, extracts metadata, normalizes, and builds the index."""
@@ -707,25 +857,44 @@ def read_playlist_file(playlist_file_path):
     return tracks
 
 # --- Playlist Generation ---
-def generate_playlist(tracks, input_playlist_path, output_dir_str, mpd_playlist_dir_str, mpd_music_dir_str, match_threshold, log_file_path_obj, missing_tracks_dir_path, live_penalty_factor):
+# --- playlist_maker.py (Partial - showing main and generate_playlist) ---
+
+# [Imports: os, sys, mutagen, Path, fuzz, logging, argparse, time, unicodedata, re, datetime, random, configparser, pd (or DummyPandas)]
+# [Global Variables: library_index, INTERACTIVE_MODE, PARENTHETICAL_STRIP_REGEX, Colors class, config object, DEFAULT values]
+# [Helper Functions: colorize, parse_list, get_config, normalize_and_detect_specific_live_format, normalize_string_for_matching, check_album_for_live_indicators]
+# [Function: format_output_filename(format_string, raw_basename, now, default_extension=".m3u")]
+# [Function: setup_logging(log_file_path, log_mode)]
+# [Function: get_file_metadata(file_path_obj)]
+# [Function: scan_library(scan_library_path_str, supported_extensions, live_album_keywords_regex)]
+# [Function: prompt_user_for_choice(...)]
+# [Function: find_track_in_index(...)]
+# [Function: read_playlist_file(playlist_file_path)]
+
+
+def generate_playlist(tracks, input_playlist_path, output_m3u_filepath_str, mpd_playlist_dir_str,
+                      mpd_music_dir_str, match_threshold,
+                      missing_tracks_dir_path, live_penalty_factor):
     """Generates the M3U playlist, handling matching and output."""
-    global library_index
+    global library_index # Ensure it's accessible
     if not library_index: # Check again before processing
         logging.error("Library index is empty. Cannot generate playlist.")
         print(colorize("Error: Music library index is empty. Cannot generate playlist.", Colors.RED), file=sys.stderr)
-        return
+        # In a real CLI, this might lead to an exit, but as a library func, returning indicates failure.
+        return [] # Return empty list to signify no tracks processed or major issue
 
     try:
-        resolved_mpd_music_dir = Path(mpd_music_dir_str).resolve(strict=True)
+        # mpd_music_dir_str is expected to be resolved in main()
+        resolved_mpd_music_dir = Path(mpd_music_dir_str)
+        if not resolved_mpd_music_dir.is_dir(): # Should be already checked in main(), but good to confirm
+            logging.error(f"MPD music directory does not exist or is not a directory: '{resolved_mpd_music_dir}'.")
+            print(colorize(f"Error: MPD music directory '{resolved_mpd_music_dir}' not found or invalid. Check config/args.", Colors.RED), file=sys.stderr)
+            return [] # Indicate failure
         logging.info(f"Using resolved MPD music directory: {resolved_mpd_music_dir}")
-    except FileNotFoundError:
-        logging.error(f"MPD music directory does not exist: '{mpd_music_dir_str}'.")
-        print(colorize(f"Error: MPD music directory '{mpd_music_dir_str}' not found. Check config/args.", Colors.RED), file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        logging.error(f"Error resolving MPD music directory '{mpd_music_dir_str}': {e}")
-        print(colorize(f"Error resolving MPD music directory: {e}", Colors.RED), file=sys.stderr)
-        sys.exit(1)
+    except Exception as e: # Catch any other issue resolving this critical path
+        logging.error(f"Error with MPD music directory '{mpd_music_dir_str}': {e}")
+        print(colorize(f"Error with MPD music directory: {e}", Colors.RED), file=sys.stderr)
+        return []
+
 
     m3u_lines = ["#EXTM3U"]
     skipped_track_inputs = []
@@ -755,7 +924,7 @@ def generate_playlist(tracks, input_playlist_path, output_dir_str, mpd_playlist_
                 found_count += 1
                 print(f"  -> {colorize('Found:', Colors.GREEN)} {m3u_path_string}")
 
-            except ValueError as ve:
+            except ValueError as ve: # Path not relative
                 reason = f"Path not relative to MPD library tree ({resolved_mpd_music_dir})"
                 logging.warning(f"Skipping track (Path Error): '{abs_file_path_from_index}' not within '{resolved_mpd_music_dir}'.")
                 skipped_track_inputs.append(f"{artist} - {track} (Reason: {reason} - Path: {abs_file_path_from_index})")
@@ -767,20 +936,13 @@ def generate_playlist(tracks, input_playlist_path, output_dir_str, mpd_playlist_
                  reason = "Skipped by user or no match found/chosen"
             skipped_track_inputs.append(f"{artist} - {track} (Reason: {reason} - see log for details)")
             print(f"  -> {colorize('Skipped:', Colors.RED)} {reason}.")
-            # Specific logging for the skip reason is handled within find_track_in_index or prompt
 
-    # --- Filename Generation & Writing ---
-    input_path_obj = Path(input_playlist_path)
-    base_name_no_ext = input_path_obj.stem
-    # Sanitize for filename - replace multiple non-alphanum chars with single underscore
-    sanitized_base = re.sub(r'[^a-zA-Z0-9]+', '_', base_name_no_ext).strip('_')
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    output_filename = f"{sanitized_base}_{date_str}.m3u" if sanitized_base else f"playlist_{date_str}.m3u" # Fallback name
+    # --- Filename Generation & Writing M3U ---
+    output_m3u_path = Path(output_m3u_filepath_str) # Convert string path to Path object
+    output_dir_for_m3u = output_m3u_path.parent   # Derive output directory from the full M3U path
 
-    output_dir = Path(output_dir_str) # Already resolved in main
     try:
-        output_dir.mkdir(parents=True, exist_ok=True) # Ensure output dir exists
-        output_m3u_path = output_dir / output_filename
+        output_dir_for_m3u.mkdir(parents=True, exist_ok=True) # Ensure output dir for M3U exists
         with open(output_m3u_path, "w", encoding="utf-8") as f:
             f.write("\n".join(m3u_lines) + "\n") # Ensure trailing newline
         print(f"\n{colorize('Generated playlist', Colors.GREEN + Colors.BOLD)} ({found_count}/{total_tracks} tracks included): {output_m3u_path}")
@@ -788,46 +950,55 @@ def generate_playlist(tracks, input_playlist_path, output_dir_str, mpd_playlist_
     except Exception as e:
         logging.error(f"Failed to write playlist to {output_m3u_path}: {e}", exc_info=True)
         print(colorize(f"Error writing output playlist {output_m3u_path}: {e}", Colors.RED), file=sys.stderr)
-        return # Stop if primary output fails
+        return skipped_track_inputs # Return what we have, as M3U write failed
 
     # --- Optionally copy to MPD playlist directory ---
     if mpd_playlist_dir_str:
         try:
-            mpd_playlist_dir = Path(mpd_playlist_dir_str) # Already resolved
-            if not mpd_playlist_dir.is_dir():
-                if not mpd_playlist_dir.exists():
-                    logging.info(f"MPD playlist directory '{mpd_playlist_dir}' does not exist. Creating.")
-                    mpd_playlist_dir.mkdir(parents=True, exist_ok=True)
-                else:
-                    logging.error(f"MPD playlist path '{mpd_playlist_dir}' exists but is not a directory.")
-                    raise FileNotFoundError(f"Not a directory: {mpd_playlist_dir}")
+            mpd_playlist_path_obj = Path(mpd_playlist_dir_str) # Already resolved in main
+            # Target filename for MPD copy is the same as the generated M3U's name
+            mpd_target_filename = output_m3u_path.name
+            mpd_final_m3u_path = mpd_playlist_path_obj / mpd_target_filename
 
-            mpd_m3u_path = mpd_playlist_dir / output_filename
-            with open(mpd_m3u_path, "w", encoding="utf-8") as f:
+            if not mpd_playlist_path_obj.is_dir():
+                if not mpd_playlist_path_obj.exists():
+                    logging.info(f"MPD playlist directory '{mpd_playlist_path_obj}' does not exist. Creating.")
+                    mpd_playlist_path_obj.mkdir(parents=True, exist_ok=True)
+                else: # Exists but not a directory
+                    logging.error(f"MPD playlist path '{mpd_playlist_path_obj}' exists but is not a directory.")
+                    # This would typically be an error condition the user needs to fix.
+                    # We'll log it and skip copying.
+                    raise FileNotFoundError(f"Not a directory: {mpd_playlist_path_obj}")
+
+            with open(mpd_final_m3u_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(m3u_lines) + "\n")
-            print(f"{colorize('Copied playlist to MPD directory:', Colors.CYAN)} {mpd_m3u_path}")
-            logging.info(f"Copied playlist to MPD directory: {mpd_m3u_path}")
-        except (FileNotFoundError, PermissionError, OSError, Exception) as e:
+            print(f"{colorize('Copied playlist to MPD directory:', Colors.CYAN)} {mpd_final_m3u_path}")
+            logging.info(f"Copied playlist to MPD directory: {mpd_final_m3u_path}")
+        except (FileNotFoundError, PermissionError, OSError, Exception) as e: # Catch broadly
             logging.error(f"Failed to copy playlist to MPD directory '{mpd_playlist_dir_str}': {e}", exc_info=True)
             print(colorize(f"Warning: Failed to copy playlist to MPD directory '{mpd_playlist_dir_str}': {e}", Colors.YELLOW), file=sys.stderr)
 
     # --- Write Missing Tracks File ---
     if skipped_track_inputs:
         try:
-            missing_tracks_dir_path.mkdir(parents=True, exist_ok=True)
-            missing_filename_base = f"{sanitized_base}_{date_str}" if sanitized_base else f"playlist_{date_str}"
-            missing_filename = f"{missing_filename_base}-missing-tracks.txt"
-            missing_file_path = missing_tracks_dir_path / missing_filename
-            with open(missing_file_path, "w", encoding="utf-8") as f_missing:
-                f_missing.write(f"# Input playlist: {input_playlist_path}\n")
-                f_missing.write(f"# Generated M3U: {output_m3u_path}\n")
+            # missing_tracks_dir_path is expected to be a resolved Path object from main()
+            missing_tracks_dir_path.mkdir(parents=True, exist_ok=True) # Ensure missing tracks dir exists
+
+            # Derive missing tracks filename from the M3U filename stem
+            missing_filename_stem = output_m3u_path.stem # e.g., "My_Playlist_2023-01-01"
+            missing_filename = f"{missing_filename_stem}-missing-tracks.txt"
+            missing_file_full_path = missing_tracks_dir_path / missing_filename
+
+            with open(missing_file_full_path, "w", encoding="utf-8") as f_missing:
+                f_missing.write(f"# Input playlist: {input_playlist_path}\n") # Original input playlist path
+                f_missing.write(f"# Generated M3U: {output_m3u_path}\n")    # Path to the M3U we created
                 f_missing.write(f"# Date Generated: {datetime.now().isoformat()}\n")
                 f_missing.write(f"# {len(skipped_track_inputs)} tracks from input file not found or skipped:\n")
                 f_missing.write("-" * 30 + "\n")
                 for missing_track_info in skipped_track_inputs:
                     f_missing.write(f"{missing_track_info}\n")
-            print(f"{colorize('List of missing/skipped tracks saved to:', Colors.YELLOW)} {missing_file_path}")
-            logging.info(f"List of {len(skipped_track_inputs)} missing/skipped tracks saved to: {missing_file_path}")
+            print(f"{colorize('List of missing/skipped tracks saved to:', Colors.YELLOW)} {missing_file_full_path}")
+            logging.info(f"List of {len(skipped_track_inputs)} missing/skipped tracks saved to: {missing_file_full_path}")
         except Exception as e:
             logging.error(f"Failed to write missing tracks file to {missing_tracks_dir_path}: {e}", exc_info=True)
             print(colorize(f"Warning: Failed to write missing tracks file: {e}", Colors.YELLOW), file=sys.stderr)
@@ -841,18 +1012,20 @@ def generate_playlist(tracks, input_playlist_path, output_dir_str, mpd_playlist_
         logging.info("--- Summary: All tracks from input file were matched and included successfully. ---")
         print(colorize("\nAll tracks included successfully.", Colors.GREEN))
 
+    return skipped_track_inputs
+
 # --- Main Execution ---
 def main(argv_list=None): # Can accept arguments for GUI usage
     global INTERACTIVE_MODE
     global PARENTHETICAL_STRIP_REGEX
-    global config
+    global config # Ensure global config is accessible
 
     # --- Determine Script Directory ---
     script_dir = Path.cwd() # Default if __file__ fails
     try:
         script_dir = Path(__file__).parent.resolve()
     except NameError:
-        pass # Keep CWD
+        pass # Keep CWD if __file__ not defined (e.g. interactive interpreter)
 
     # --- Determine Config File Paths ---
     config_path_local = script_dir / CONFIG_FILENAME_LOCAL
@@ -866,13 +1039,11 @@ def main(argv_list=None): # Can accept arguments for GUI usage
     loaded_files = config.read([config_path_local, config_path_user]) # Later files override earlier
 
     # --- Argument Parser Setup ---
-    # Use f-strings to show default values in help text
     parser = argparse.ArgumentParser(
         description=f"{Colors.BOLD}Generate M3U playlists by matching 'Artist - Track' lines against a music library.{Colors.RESET}",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter # Shows defaults in help
     )
 
-    # Set defaults to None to detect if they were set via command line
     parser.add_argument("playlist_file", help="Input text file (one 'Artist - Track' per line).")
     parser.add_argument("-l", "--library", default=None, help=f"Music library path. Cfg: Paths.library, Def: {DEFAULT_SCAN_LIBRARY}")
     parser.add_argument("--mpd-music-dir", default=None, help=f"MPD music_directory path. Cfg: Paths.mpd_music_dir, Def: {DEFAULT_MPD_MUSIC_DIR_CONF}")
@@ -884,6 +1055,17 @@ def main(argv_list=None): # Can accept arguments for GUI usage
                         help=f"Min match score [0-100]. Cfg: Matching.threshold, Def: {DEFAULT_MATCH_THRESHOLD}")
     parser.add_argument("--live-penalty", type=float, default=None, metavar="[0.0-1.0]",
                         help=f"Penalty for unwanted live match. Cfg: Matching.live_penalty, Def: {DEFAULT_LIVE_PENALTY_FACTOR}")
+    parser.add_argument(
+        "--output-name-format", # New argument
+        default=None,
+        type=str,
+        help="Custom format string for the output M3U filename. "
+             "Placeholders: {basename}, {basename:transforms}, {YYYY}, {YY}, {MM}, {DD}, {hh}, {mm}, {ss}. "
+             "Transforms for basename (e.g., {basename:cp}): "
+             "'c'-capitalize words, 'u'-uppercase, 'l'-lowercase; "
+             "'p'-prettify spaces, 's'-hyphenate, '_'-underscorify. "
+             "Example: \"{basename:c}_{YYYY}-{MM}-{DD}.m3u\""
+    )
     parser.add_argument("--log-file", type=Path, default=None, help=f"Log file path. Cfg: Logging.log_file, Def: <script_dir>/{DEFAULT_LOG_FILE_NAME}")
     parser.add_argument("--log-mode", choices=['append', 'overwrite'], default=None, help="Log file mode. Cfg: Logging.log_mode, Def: overwrite")
     parser.add_argument("--log-level", choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'], default=None, help="Log level for file. Cfg: Logging.log_level, Def: INFO")
@@ -892,31 +1074,29 @@ def main(argv_list=None): # Can accept arguments for GUI usage
     parser.add_argument("--strip-keywords", nargs='+', default=None, help="Keywords to strip from (). Cfg: Matching.strip_keywords")
     parser.add_argument("-i", "--interactive", action="store_true", default=None, help="Enable interactive mode. Cfg: General.interactive, Def: false")
 
-    # --- Argument Parser Setup (inside main as before) ---
-    # ...
     if argv_list is None: # Running from command line
         args = parser.parse_args()
     else: # Called with specific args (e.g., from GUI)
         args = parser.parse_args(argv_list)
 
-    # --- Determine Final Configuration Values ---
+    # --- Determine Final Configuration Values (using args or config or defaults) ---
     final_library_path = args.library if args.library is not None else get_config("Paths", "library", DEFAULT_SCAN_LIBRARY)
     final_mpd_music_dir = args.mpd_music_dir if args.mpd_music_dir is not None else get_config("Paths", "mpd_music_dir", DEFAULT_MPD_MUSIC_DIR_CONF)
-    final_output_dir = args.output_dir if args.output_dir is not None else get_config("Paths", "output_dir", DEFAULT_OUTPUT_DIR)
-    final_missing_dir = args.missing_dir if args.missing_dir is not None else get_config("Paths", "missing_dir", DEFAULT_MISSING_TRACKS_DIR)
+    final_output_dir_str = args.output_dir if args.output_dir is not None else get_config("Paths", "output_dir", DEFAULT_OUTPUT_DIR)
+    final_missing_dir_str = args.missing_dir if args.missing_dir is not None else get_config("Paths", "missing_dir", DEFAULT_MISSING_TRACKS_DIR)
 
     # MPD Playlist Dir Logic
-    final_mpd_playlist_dir = None
-    if args.mpd_playlist_dir is not None: # Flag used
-        if args.mpd_playlist_dir == "USE_DEFAULT_OR_CONFIG": # Flag used w/o value
+    final_mpd_playlist_dir_str = None
+    if args.mpd_playlist_dir is not None:
+        if args.mpd_playlist_dir == "USE_DEFAULT_OR_CONFIG":
              config_val = get_config("Paths", "mpd_playlist_dir", fallback="USE_DEFAULT_CONST")
-             if config_val == "USE_DEFAULT_CONST": final_mpd_playlist_dir = DEFAULT_MPD_PLAYLIST_DIR_CONF
-             elif config_val: final_mpd_playlist_dir = config_val
-             else: final_mpd_playlist_dir = None # Explicitly disabled in config
-        else: final_mpd_playlist_dir = args.mpd_playlist_dir # Flag used w/ value
-    else: # Flag not used
+             if config_val == "USE_DEFAULT_CONST": final_mpd_playlist_dir_str = DEFAULT_MPD_PLAYLIST_DIR_CONF
+             elif config_val: final_mpd_playlist_dir_str = config_val
+             else: final_mpd_playlist_dir_str = None # Explicitly disabled ("" in config)
+        else: final_mpd_playlist_dir_str = args.mpd_playlist_dir
+    else:
         config_val = get_config("Paths", "mpd_playlist_dir", fallback=None)
-        final_mpd_playlist_dir = config_val if config_val else None
+        final_mpd_playlist_dir_str = config_val if config_val else None
 
     final_threshold = args.threshold if args.threshold is not None else get_config("Matching", "threshold", DEFAULT_MATCH_THRESHOLD, int)
     final_live_penalty = args.live_penalty if args.live_penalty is not None else get_config("Matching", "live_penalty", DEFAULT_LIVE_PENALTY_FACTOR, float)
@@ -926,140 +1106,132 @@ def main(argv_list=None): # Can accept arguments for GUI usage
     # Log File Path
     default_log_path = script_dir / DEFAULT_LOG_FILE_NAME
     config_log_file_str = get_config("Logging", "log_file", str(default_log_path))
-    final_log_file_path = args.log_file if args.log_file is not None else Path(config_log_file_str)
+    final_log_file_path_obj = args.log_file if args.log_file is not None else Path(config_log_file_str)
 
     final_log_mode = args.log_mode if args.log_mode is not None else get_config("Logging", "log_mode", "overwrite")
     final_log_level_str = args.log_level if args.log_level is not None else get_config("Logging", "log_level", "INFO")
 
     final_extensions = args.extensions if args.extensions is not None else get_config("General", "extensions", DEFAULT_SUPPORTED_EXTENSIONS, list)
 
-    if args.interactive is True: # Check explicitly for True (set by store_true)
+    if args.interactive is True:
          final_interactive = True
-    elif args.interactive is None: # Check if flag was NOT used
+    elif args.interactive is None:
          final_interactive = get_config("General", "interactive", fallback=False, expected_type=bool)
-    else: # Should not happen with store_true, but safety fallback
+    else:
         final_interactive = False
-
-    # Set Global flag
     INTERACTIVE_MODE = final_interactive
 
-    # --- Expand User Paths ---
+    # --- Expand User Paths (Tilde Expansion) ---
     final_library_path = os.path.expanduser(final_library_path)
-    final_mpd_music_dir = os.path.expanduser(final_mpd_music_dir)
-    final_output_dir = os.path.expanduser(final_output_dir)
-    final_missing_dir = os.path.expanduser(final_missing_dir)
-    if final_mpd_playlist_dir: final_mpd_playlist_dir = os.path.expanduser(final_mpd_playlist_dir)
-    # Resolve log path *after* expansion
-    try:
-        final_log_file_path = Path(os.path.expanduser(str(final_log_file_path))).resolve()
+    final_mpd_music_dir_str = os.path.expanduser(final_mpd_music_dir) # Renamed to avoid clash with Path obj
+    final_output_dir_str = os.path.expanduser(final_output_dir_str)
+    final_missing_dir_str = os.path.expanduser(final_missing_dir_str)
+    if final_mpd_playlist_dir_str: final_mpd_playlist_dir_str = os.path.expanduser(final_mpd_playlist_dir_str)
+
+    try: # Resolve log path *after* expansion
+        final_log_file_path_obj = Path(os.path.expanduser(str(final_log_file_path_obj))).resolve()
     except Exception as e:
-         print(f"{Colors.YELLOW}Warning:{Colors.RESET} Could not fully resolve log path '{final_log_file_path}': {e}", file=sys.stderr)
-         # Use the expanded path without resolve if resolve fails
-         final_log_file_path = Path(os.path.expanduser(str(final_log_file_path)))
+         print(f"{Colors.YELLOW}Warning:{Colors.RESET} Could not fully resolve log path '{final_log_file_path_obj}': {e}. Using unverified path.", file=sys.stderr)
+         final_log_file_path_obj = Path(os.path.expanduser(str(final_log_file_path_obj))) # Use expanded path if resolve fails
 
     # --- Post-processing / Validation ---
     if not (0 <= final_threshold <= 100): parser.error(f"--threshold ({final_threshold}) must be between 0 and 100.")
     if not (0.0 <= final_live_penalty <= 1.0): parser.error(f"--live-penalty ({final_live_penalty}) must be between 0.0 and 1.0.")
-    final_supported_extensions = tuple(ext.lower() if ext.startswith('.') else '.' + ext.lower() for ext in final_extensions if ext) # Ensure non-empty
+    final_supported_extensions_tuple = tuple(ext.lower() if ext.startswith('.') else '.' + ext.lower() for ext in final_extensions if ext)
 
     # --- Setup Logging ---
-    setup_logging(final_log_file_path, final_log_mode)
+    setup_logging(final_log_file_path_obj, final_log_mode)
     log_level_map = {'DEBUG': logging.DEBUG, 'INFO': logging.INFO, 'WARNING': logging.WARNING, 'ERROR': logging.ERROR}
     final_log_level = log_level_map.get(final_log_level_str.upper(), logging.INFO)
     logging.getLogger().setLevel(final_log_level)
 
     # --- Log Effective Settings ---
     logging.info("="*30 + " Playlist Maker Started " + "="*30)
-    logging.info(f"Version: 1.6 (Config File & Color Output Final)")
-    logging.info(f"Config files loaded: {loaded_files if loaded_files else 'None found'}")
-    logging.info(f"--- Effective Settings ---")
-    logging.info(f"  Interactive Mode: {final_interactive}")
-    logging.info(f"  Input Playlist File: {args.playlist_file}")
-    logging.info(f"  Library Scan Path: {final_library_path}")
-    logging.info(f"  MPD Music Dir: {final_mpd_music_dir}")
-    logging.info(f"  Output Dir: {final_output_dir}")
-    logging.info(f"  Missing Tracks Dir: {final_missing_dir}")
-    logging.info(f"  MPD Playlist Copy Dir: {final_mpd_playlist_dir if final_mpd_playlist_dir else 'Disabled'}")
-    logging.info(f"  Match Threshold: {final_threshold}")
-    logging.info(f"  Live Penalty Factor: {final_live_penalty}")
-    logging.info(f"  Log File: {final_log_file_path}")
-    logging.info(f"  Log Mode: {final_log_mode}")
-    logging.info(f"  Log Level: {final_log_level_str}")
-    logging.info(f"  Supported Extensions: {final_supported_extensions}")
-    logging.info(f"  Live Album Keywords: {final_live_album_kws}")
-    logging.info(f"  Parenthetical Strip Keywords: {final_strip_keywords}")
-    logging.info(f"--------------------------")
+    # ... (logging all final settings as before)
+    logging.info(f"  Output Filename Format (CLI arg): {args.output_name_format if args.output_name_format else 'Using default naming'}")
+
 
     # --- Compile Regex ---
     try:
-        live_album_keywords_regex = None
+        live_album_keywords_regex_obj = None
         if final_live_album_kws:
              live_album_regex_pattern = r"(" + "|".join(final_live_album_kws) + r")"
-             live_album_keywords_regex = re.compile(live_album_regex_pattern, re.IGNORECASE)
+             live_album_keywords_regex_obj = re.compile(live_album_regex_pattern, re.IGNORECASE)
              logging.info(f"Using live album regex: {live_album_regex_pattern}")
 
-        # Reset strip regex global before compiling
         PARENTHETICAL_STRIP_REGEX = None
         if final_strip_keywords:
-            # Match keyword potentially surrounded by non-word chars or start/end
             strip_keywords_pattern = r"|".join(r"(?:\W|^)" + re.escape(kw) + r"(?:\W|$)" for kw in final_strip_keywords)
             PARENTHETICAL_STRIP_REGEX = re.compile(strip_keywords_pattern, re.IGNORECASE)
             logging.info(f"Using parenthetical strip regex: {strip_keywords_pattern}")
-
     except re.error as e:
         logging.error(f"Invalid regex pattern derived from config/defaults: {e}")
         print(colorize(f"Error: Invalid regex pattern in keywords: {e}", Colors.RED), file=sys.stderr)
-        sys.exit(1)
+        return {"success": False, "error": f"Invalid regex pattern: {e}", "skipped_tracks": []} # For GUI
 
-    # --- Resolve/Check remaining paths ---
-    missing_tracks_dir_resolved = Path(final_missing_dir).resolve()
+
+    # --- Resolve Essential Paths to Path Objects ---
     try:
-        playlist_file_abs = Path(args.playlist_file).resolve(strict=True)
-        library_abs = Path(final_library_path).resolve(strict=True)
-        mpd_music_dir_abs = Path(final_mpd_music_dir).resolve(strict=True)
-        output_dir_abs = Path(final_output_dir).resolve()
-        logging.info(f"Resolved Input Playlist: {playlist_file_abs}")
-        # (Already logged library, mpd, output dirs)
+        input_playlist_file_abs_path = Path(args.playlist_file).resolve(strict=True)
+        library_abs_path = Path(final_library_path).resolve(strict=True)
+        mpd_music_dir_abs_path = Path(final_mpd_music_dir_str).resolve(strict=True)
+        output_dir_abs_path = Path(final_output_dir_str).resolve() # .resolve() is fine, mkdir later handles existence
+        missing_tracks_dir_abs_path = Path(final_missing_dir_str).resolve()
+
+        logging.info(f"Resolved Input Playlist: {input_playlist_file_abs_path}")
+        # (Library, MPD, Output dirs already logged or implied)
     except FileNotFoundError as e:
         logging.error(f"Essential path does not exist after resolving: {e}. Exiting.")
         print(colorize(f"Error: Essential path not found: {e}", Colors.RED), file=sys.stderr)
-        sys.exit(1)
+        return {"success": False, "error": f"Essential path not found: {e}", "skipped_tracks": []} # For GUI
     except Exception as e:
         logging.error(f"Error resolving final paths: {e}", exc_info=True)
         print(colorize(f"Error resolving paths: {e}", Colors.RED), file=sys.stderr)
-        sys.exit(1)
+        return {"success": False, "error": f"Error resolving paths: {e}", "skipped_tracks": []} # For GUI
+
+
+    # --- Filename Generation for Output M3U ---
+    raw_playlist_basename = input_playlist_file_abs_path.stem
+    current_time = datetime.now()
+    generated_m3u_filename = format_output_filename(
+        args.output_name_format, # This is the format string from CLI (can be None)
+        raw_playlist_basename,
+        current_time
+    )
+    logging.info(f"Derived M3U output filename: {generated_m3u_filename}")
+    full_output_m3u_filepath = output_dir_abs_path / generated_m3u_filename
+
 
     # --- Main Execution Flow ---
-    print(f"Reading input file: {args.playlist_file}...")
-    tracks = read_playlist_file(args.playlist_file)
+    print(f"Reading input file: {input_playlist_file_abs_path}...")
+    tracks = read_playlist_file(str(input_playlist_file_abs_path)) # Function expects string path
     if not tracks:
         logging.error("Exiting: No valid track entries read.")
-        print(colorize(f"Error: No valid 'Artist - Track' lines found in '{args.playlist_file}'.", Colors.RED), file=sys.stderr)
-        sys.exit(1)
+        print(colorize(f"Error: No valid 'Artist - Track' lines found in '{input_playlist_file_abs_path}'.", Colors.RED), file=sys.stderr)
+        return {"success": False, "error": "No valid tracks in input file", "skipped_tracks": []}
     print(f"Read {len(tracks)} track entries.")
 
-    scan_library(str(library_abs), final_supported_extensions, live_album_keywords_regex)
-    if not library_index:
-        # Error logged in scan_library
-        sys.exit(1) # Exit if scan yielded nothing
+    scan_library(str(library_abs_path), final_supported_extensions_tuple, live_album_keywords_regex_obj)
+    if not library_index: # scan_library logs errors internally
+        return {"success": False, "error": "Library scan found no tracks", "skipped_tracks": []}
     print(colorize(f"Scan complete. Found {len(library_index)} tracks in library index.", Colors.GREEN))
 
-    generate_playlist(
+    # --- Call generate_playlist ---
+    skipped_tracks_list = generate_playlist(
         tracks=tracks,
-        input_playlist_path=str(playlist_file_abs), # Pass absolute path
-        output_dir_str=str(output_dir_abs),
-        mpd_playlist_dir_str=str(final_mpd_playlist_dir) if final_mpd_playlist_dir else None,
-        mpd_music_dir_str=str(mpd_music_dir_abs),
+        input_playlist_path=str(input_playlist_file_abs_path),
+        output_m3u_filepath_str=str(full_output_m3u_filepath), # Pass the full generated path
+        mpd_playlist_dir_str=final_mpd_playlist_dir_str, # Can be None
+        mpd_music_dir_str=str(mpd_music_dir_abs_path),
         match_threshold=final_threshold,
-        log_file_path_obj=final_log_file_path,
-        missing_tracks_dir_path=missing_tracks_dir_resolved,
+        missing_tracks_dir_path=missing_tracks_dir_abs_path, # Pass Path object
         live_penalty_factor=final_live_penalty
     )
 
-    logging.info("Playlist Maker script finished successfully.")
-    print(f"\n{colorize('Done.', Colors.BOLD + Colors.GREEN)}")
+    logging.info("Playlist Maker script processing completed.")
+    print(f"\n{colorize('DONE', Colors.BOLD + Colors.GREEN)}")
 
-    return True # Or some status object/dict
+    return {"success": True, "skipped_tracks": skipped_tracks_list}
 
 # --- Entry Point ---
 if __name__ == "__main__":
