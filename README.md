@@ -12,6 +12,23 @@ The ultimate version is to somehow feed AI a database of my library, query it wi
 
 The script scans your specified music library, builds an index of your tracks (including metadata like artist, title, album, duration, and identifying live recordings), and then processes an input text file. For each `Artist - Track` line in the input file, it searches the library index for the best match. It generates an M3U playlist file with relative paths based on your music directory configuration, making it directly usable by any android music app or software that uses .m3u format playlists. It also features an interactive mode for resolving ambiguities and allows customizable output filenames.
 
+Here's an example of the script scanning the library:
+
+![Library Scan Output](assets/playlist-maker-library-scan.png)
+
+When an ambiguous match occurs in interactive mode, you'll see a prompt like this:
+
+![Interactive Prompt Example](assets/playlist-maker-interactive-mode-version-choice.png)
+
+Here is another example of the interactive mode showing a prompt for a track selection:
+
+![Interactive Prompt Example](assets/playlist-maker-interactive-mode-alternative-track-selection.png)
+
+And finally, when the playlist is ready:
+
+![Playlist Output](assets/playlist-maker-completed.png)
+
+
 ## Features
 
 - **Text List Input:** Reads simple `.txt` files with one `Artist - Track` per line.
@@ -216,12 +233,13 @@ options:
 **Configuration Files**
 
 The script can also be configured via two INI-style configuration files:
-`bash
-    playlist_maker.conf: Place this file in the same directory as playlist_maker.py.
-    `
 
     ```bash
-    ~/.config/playlist-maker/config.ini: User-specific configuration located in your home directory's .config folder.
+    playlist_maker.conf: Place this file in the same directory as playlist_maker.py.
+    ```
+
+    ```bash
+    ~/.config/playlist-maker/playlist_maker.conf: User-specific configuration located in your home directory's .config folder.
     ```
 
 Settings in these files are overridden by command-line arguments. Refer to the comments within playlist*maker.py (near the DEFAULT* constants) or the script's help output for available options and their sections (e.g., [Paths], [Matching], [Logging], [General]).
@@ -264,4 +282,4 @@ python playlist_maker_gui.py your_playlist_name.txt
 
 ## Version
 
-Current version: **1.7.0**
+Current version: **1.7.1**

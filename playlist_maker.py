@@ -32,7 +32,7 @@ except ImportError:
     logging.info("Pandas library not found for __main__ block; using basic duration checks.")
 
 # --- Configuration Defaults & Script Info ---
-SCRIPT_VERSION = "1.7.0" # Or whatever you decide your starting version is
+SCRIPT_VERSION = "1.7.1" # Or whatever you decide your starting version is
 
 # --- Configuration Defaults ---
 DEFAULT_SCAN_LIBRARY = "~/music"
@@ -67,6 +67,16 @@ class Colors:
     CYAN = "\033[96m" if _IS_TTY else ""
     BOLD = "\033[1m" if _IS_TTY else ""
     UNDERLINE = "\033[4m" if _IS_TTY else ""
+
+# Assuming _IS_TTY is defined
+class Symbols:
+    SUCCESS = "[✔]" if _IS_TTY else "[+]"
+    FAILURE = "[✘]" if _IS_TTY else "[-]"
+    WARNING = "[!]" if _IS_TTY else "[!]"
+    INFO    = "[i]" if _IS_TTY else "[i]" # Simple 'i'
+    ARROW   = "[→]" if _IS_TTY else "->"
+    BULLET  = "[•]" if _IS_TTY else "*"  # For list items in prompts
+    ELLIPSIS= "..."
 
 def colorize(text, color_code):
     """Wraps text with ANSI color codes, if supported."""
@@ -487,10 +497,13 @@ def scan_library(scan_library_path_str, supported_extensions, live_album_keyword
         print(colorize(f"Error: Could not resolve scan library path {scan_library_path_str}: {e}", Colors.RED), file=sys.stderr)
         sys.exit(1)
 
-    print(f"Scanning music library at {scan_library_path}..."); logging.info(f"Starting library scan at {scan_library_path}")
+    print(f"\n{colorize('Scanning Music Library:', Colors.CYAN)}")
+    print(f"{Symbols.INFO} Path: {colorize(str(scan_library_path), Colors.MAGENTA)}")
     start_time = time.time()
     processed_count = 0
     scan_errors = 0
+    # Simple dot progress for scanning
+    update_interval = 500 # Print a dot every 500 files
 
     for root, _, files in os.walk(scan_library_path, followlinks=True):
         root_path = Path(root)
@@ -498,7 +511,8 @@ def scan_library(scan_library_path_str, supported_extensions, live_album_keyword
             # Check extension using the provided tuple
             if file.lower().endswith(supported_extensions):
                 processed_count += 1
-                if processed_count % 500 == 0: print(".", end="", flush=True)
+                if processed_count % update_interval == 0:
+                    print(f"{colorize('.', Colors.BLUE)}", end="", flush=True)
 
                 file_path = root_path / file
                 try:
@@ -538,8 +552,18 @@ def scan_library(scan_library_path_str, supported_extensions, live_album_keyword
                     scan_errors += 1
 
     print("\nScan complete.")
+    print() # Newline after dots
     end_time = time.time()
-    logging.info(f"Library scan finished. Found {len(library_index)} tracks in {end_time - start_time:.2f} seconds.")
+    scan_duration = end_time - start_time
+    if not library_index:
+        print(f"{Symbols.FAILURE} {colorize('Scan Failed.', Colors.RED)} No tracks found in {scan_duration:.2f}s.")
+    else:
+        print(f"{Symbols.SUCCESS} {colorize('Scan Complete.', Colors.GREEN)} Found {colorize(str(len(library_index)), Colors.BOLD)} tracks in {scan_duration:.2f}s.")
+
+    if scan_errors > 0:
+        print(f"  {Symbols.WARNING} {colorize(f'Encountered {scan_errors} errors during scan. Check log for details.', Colors.YELLOW)}")
+    print(f"{Colors.CYAN}{'-'*45}{Colors.RESET}")
+
     if scan_errors > 0:
         logging.warning(f"Encountered {scan_errors} errors during scan (check log for details).")
         print(colorize(f"Warning: Encountered {scan_errors} errors during scan (check log).", Colors.YELLOW))
@@ -547,8 +571,6 @@ def scan_library(scan_library_path_str, supported_extensions, live_album_keyword
         logging.error("Library scan resulted in 0 recognized tracks.")
         print(colorize("Error: No tracks found in the specified scan library.", Colors.RED), file=sys.stderr)
         # Consider exiting if scan fails completely? No, maybe user wants to retry later.
-
-# (Add this new function to playlist_maker.py)
 
 def prompt_album_selection_or_skip(input_artist, input_track, artist_library_entries, input_live_format, threshold):
     """
@@ -1125,9 +1147,14 @@ def generate_playlist(tracks, input_playlist_path, output_m3u_filepath_str, mpd_
     found_count = 0
     total_tracks = len(tracks)
 
-    print(f"\nProcessing {total_tracks} track entries...")
+    print(f"\n{colorize('Processing Playlist:', Colors.CYAN)} {colorize(str(total_tracks), Colors.BOLD)} input tracks.")
+    print(f"{Colors.CYAN}{'-'*45}{Colors.RESET}")
+
     for index, (artist, track) in enumerate(tracks):
-        print(f"\n{colorize(f'[{index + 1}/{total_tracks}]', Colors.CYAN)} Searching for: {artist} - {track}")
+        if index > 0: # Optional subtle separator between track processing blocks
+            print(f"{Colors.BLUE}{'.' * 20}{Colors.RESET}")
+
+        print(f"{Colors.CYAN}[{index + 1:02d}/{total_tracks:02d}]{Colors.RESET} {colorize('Input:', Colors.BOLD)} {artist} - {track}")
 
         matched_entry = find_track_in_index(artist, track, match_threshold, live_penalty_factor)
 
@@ -1146,20 +1173,21 @@ def generate_playlist(tracks, input_playlist_path, output_m3u_filepath_str, mpd_
                 m3u_lines.append(f"#EXTINF:{duration_val},{extinf_artist} - {extinf_title}")
                 m3u_lines.append(m3u_path_string)
                 found_count += 1
-                print(f"  -> {colorize('Found:', Colors.GREEN)} {m3u_path_string}")
+                print(f"  {Symbols.SUCCESS} {colorize('Matched:', Colors.GREEN)} {colorize(m3u_path_string, Colors.MAGENTA)}")
 
             except ValueError as ve: # Path not relative
                 reason = f"Path not relative to MPD library tree ({resolved_mpd_music_dir})"
                 logging.warning(f"Skipping track (Path Error): '{abs_file_path_from_index}' not within '{resolved_mpd_music_dir}'.")
                 skipped_track_inputs.append(f"{artist} - {track} (Reason: {reason} - Path: {abs_file_path_from_index})")
-                print(f"  -> {colorize('Skipped:', Colors.YELLOW)} Path not relative to MPD music directory.")
+                print(f"  {Symbols.WARNING} {colorize('Skipped:', Colors.YELLOW)} {colorize("Not relative to MPD music directory. See log.", Colors.YELLOW)}")
                 continue
         else:
             reason = "No suitable match found"
             if INTERACTIVE_MODE:
                  reason = "Skipped by user or no match found/chosen"
             skipped_track_inputs.append(f"{artist} - {track} (Reason: {reason} - see log for details)")
-            print(f"  -> {colorize('Skipped:', Colors.RED)} {reason}.")
+            reason_for_log = next((item for item in skipped_track_inputs if item.startswith(f"{artist} - {track}")), f"{artist} - {track} (Reason: No suitable match found)")
+            print(f"  {Symbols.FAILURE} {colorize('Skipped:', Colors.RED)} No suitable match found. (Interactive decision or automatic skip. See log: {reason_for_log.split('(Reason: ')[-1][:-1]})")
 
     # --- Filename Generation & Writing M3U ---
     output_m3u_path = Path(output_m3u_filepath_str) # Convert string path to Path object
@@ -1376,9 +1404,12 @@ def main(argv_list=None): # Can accept arguments for GUI usage
     logging.getLogger().setLevel(final_log_level)
 
     # --- Log Effective Settings ---
-    logging.info("="*30 + " Playlist Maker Started " + "="*30)
-    logging.info(f"Version: {SCRIPT_VERSION}") # Use the SCRIPT_VERSION constant
-    # ... (logging all final settings as before)
+    print(f"{Colors.CYAN}{Colors.BOLD}=== Playlist Maker {SCRIPT_VERSION} ==={Colors.RESET}")
+    if loaded_files:
+        print(f"{Symbols.INFO} Config files loaded: {', '.join(map(str, loaded_files))}")
+    else:
+        print(f"{Symbols.INFO} No local configuration files loaded.")
+    print(f"{Colors.CYAN}{'-'*45}{Colors.RESET}")
     logging.info(f"  Output Filename Format (CLI arg): {args.output_name_format if args.output_name_format else 'Using default naming'}")
 
 
