@@ -4,234 +4,254 @@ This Python script converts simple text files containing `Artist - Track` listin
 
 ## Overview
 
-The script scans your specified music library, builds an index of your tracks (including metadata like artist, title, album, duration, and identifying live recordings), and then processes an input text file. For each `Artist - Track` line in the input file, it searches the library index for the best match. It generates an M3U playlist file with relative paths based on your music directory configuration, making it directly usable by any android music app or software that uses .m3u format playlists. It also features an interactive mode for resolving ambiguities.
+The script scans your specified music library, builds an index of your tracks (including metadata like artist, title, album, duration, and identifying live recordings), and then processes an input text file. For each `Artist - Track` line in the input file, it searches the library index for the best match. It generates an M3U playlist file with relative paths based on your music directory configuration, making it directly usable by any android music app or software that uses .m3u format playlists. It also features an interactive mode for resolving ambiguities and allows customizable output filenames.
 
 ## Features
 
-*   **Text List Input:** Reads simple `.txt` files with one `Artist - Track` per line.
-*   **Library Scanning:** Scans your music library directory for supported audio files (`.mp3`, `.flac`, `.ogg`, `.m4a` by default).
-*   **Metadata Extraction:** Uses `mutagen` to read artist, title, album, and duration tags.
-*   **Fuzzy Matching:** Uses `fuzzywuzzy` to find matches even with slight variations in names or typos.
-*   **Smart Normalization:** Cleans up artist/track names before matching (handles case, accents, `&`/`/`/`and`, featuring artists like `(feat. ...)` , strips common parenthetical terms like `(remix)`, removes track numbers).
-*   **Live Track Handling:**
-    *   Detects live tracks based on `(live)` in title/filename or keywords in album titles (e.g., "Live at", "Unplugged").
-    *   Applies a configurable score penalty when matching a non-live input track to a live library track.
-    *   Prioritizes live/studio tracks based on whether the input track specified `(live)`.
-*   **MPD Compatibility:** Generates M3U playlists with paths relative to your configured MPD music directory.
-*   **Interactive Mode (`-i`):** Prompts the user to resolve ambiguities when:
-    *   Multiple good matches are found.
-    *   No match meets the threshold.
-    *   Offers choices like selecting a specific match, skipping the track, or picking a random track by the same artist.
-*   **Missing Tracks Report:** Creates a separate text file listing tracks from the input that couldn't be matched or were skipped.
-*   **Configurable:** Many options controllable via command-line arguments (paths, threshold, extensions, keywords, etc.).
-*   **Logging:** Detailed logging to a file (`warning.log` by default) for troubleshooting.
+- **Text List Input:** Reads simple `.txt` files with one `Artist - Track` per line.
+- **Library Scanning:** Scans your music library directory for supported audio files (`.mp3`, `.flac`, `.ogg`, `.m4a` by default).
+- **Metadata Extraction:** Uses `mutagen` to read artist, title, album, and duration tags.
+- **Fuzzy Matching:** Uses `fuzzywuzzy` to find matches even with slight variations in names or typos.
+- **Smart Normalization:** Cleans up artist/track names before matching (handles case, accents, `&`/`/`/`and`, featuring artists like `(feat. ...)` , strips common parenthetical terms like `(remix)`, removes track numbers).
+- **Live Track Handling:**
+    - Detects live tracks based on `(live)` in title/filename or keywords in album titles (e.g., "Live at", "Unplugged").
+    - Applies a configurable score penalty when matching a non-live input track to a live library track.
+    - Prioritizes live/studio tracks based on whether the input track specified `(live)`.
+- **Customizable Output Filenames:** Allows users to define a format string for the generated M3U playlist filename using placeholders for basename, date/time components, and transformations (e.g., capitalization, separator changes).
+- **MPD Compatibility:** Generates M3U playlists with paths relative to your configured MPD music directory.
+- **Interactive Mode (`-i`):** Prompts the user to resolve ambiguities when:
+    - Multiple good matches are found.
+    - No match meets the threshold.
+    - Offers choices like selecting a specific match, skipping the track, or picking a random track by the same artist.
+- **Missing Tracks Report:** Creates a separate text file listing tracks from the input that couldn't be matched or were skipped.
+- **Configurable:** Many options controllable via configuration files (`playlist_maker.conf`, `~/.config/playlist-maker/config.ini`) and command-line arguments.
+- **Logging:** Detailed logging to a file (`warning.log` by default) for troubleshooting.
 
 ## Prerequisites
 
-*   **Python:** Version 3.7 or higher recommended.
-*   **Pip:** Python's package installer (usually comes with Python).
-*   **Python Libraries:**
-    *   `mutagen`: For reading audio metadata.
-    *   `fuzzywuzzy`: For fuzzy string matching.
-    *   `python-levenshtein`: Improves `fuzzywuzzy` speed significantly (recommended, sometimes required by fuzzywuzzy).
-    *   `pandas` (Optional): Used for a more robust check of track duration values (like NaN). If not installed, the script uses a basic fallback check.
+- **Python:** Version 3.7 or higher recommended.
+- **Pip:** Python's package installer (usually comes with Python).
+- **Python Libraries:**
+    - `mutagen`
+    - `fuzzywuzzy`
+    - `python-levenshtein` (Recommended for `fuzzywuzzy` performance)
+    - `pandas` (Optional, for enhanced duration checks; script has a fallback)
 
 ## Installation
 
-1.  Ensure Python 3.7+ and pip are installed (see detailed setup guide below if needed).
-2.  Place the `playlist-maker.py` script in your desired project directory.
-3.  Create a `requirements.txt` file (see guide below) in the same directory.
-4.  Create and activate a Python virtual environment within the project directory (recommended).
-5.  Install the required libraries: `pip install -r requirements.txt`
+1.  **Clone or Download:** Get the `playlist_maker.py` script and save it to your desired project directory.
+2.  **Python Environment Setup:** Follow the "Detailed Python Environment Setup Walkthrough" below to install Python (if needed) and set up a virtual environment.
+3.  **Create `requirements.txt`:** In your project directory, create a file named `requirements.txt` with the following content:
 
-*(See the detailed "Python Environment Setup Walkthrough" section below if you need help with these steps).*
+    ```txt
+    mutagen
+    fuzzywuzzy
+    python-levenshtein
+    # pandas # Optional: uncomment if you want to install pandas
+    ```
+
+4.  **Install Dependencies:** Activate your virtual environment and run:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+---
+
+### Detailed Python Environment Setup Walkthrough
+
+1.  **Check for Python Installation:**
+
+    - Open your terminal/command prompt.
+    - Type `python --version` (or `python3 --version`) and press Enter.
+    - If you see `Python 3.x.y` (where x >= 7), you're good.
+    - If not, or if you see Python 2, you need to install/upgrade Python 3.
+
+2.  **Install Python 3 (If Needed):**
+
+    - **Windows:** Download from [python.org/downloads/windows/](https://www.python.org/downloads/windows/). **Crucially, check "Add Python 3.x to PATH"** during installation.
+    - **macOS:** Download from [python.org/downloads/macos/](https://www.python.org/downloads/macos/) or use Homebrew (`brew install python3`).
+    - **Linux (Debian/Ubuntu):** `sudo apt update && sudo apt install python3 python3-pip python3-venv`
+    - **Linux (Fedora/CentOS):** `sudo dnf install python3 python3-pip`
+    - Verify with `python3 --version` in a _new_ terminal window.
+
+3.  **Ensure Pip is Up-to-Date:**
+
+    ```bash
+    python3 -m pip install --upgrade pip
+    ```
+
+4.  **Navigate to Your Project Directory:**
+
+    ```bash
+    cd path/to/your/playlist-maker-folder
+    ```
+
+5.  **Create a Virtual Environment:**
+    (The `requirements.txt` file should already be created in this directory from Step 3 of the main Installation section.)
+
+    ```bash
+    python3 -m venv venv
+    ```
+
+    This creates an isolated `venv` folder for project dependencies.
+
+6.  **Activate the Virtual Environment:**
+
+    - **Windows (Command Prompt):** `venv\Scripts\activate.bat`
+    - **Windows (PowerShell):** `venv\Scripts\Activate.ps1` (You might need to adjust script execution policy: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process`)
+    - **macOS / Linux (bash/zsh):** `source venv/bin/activate`
+    - Your terminal prompt should now indicate the active environment (e.g., `(venv)`).
+
+7.  **Install Requirements (If not done in main installation steps):**
+    While the virtual environment is active:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+8.  **Running the Script:**
+    With the virtual environment active:
+
+    ```bash
+    python playlist_maker.py your_input_file.txt [other options...]
+    ```
+
+9.  **Deactivate (When Done):**
+    ```bash
+    deactivate
+    ```
+
+---
 
 ## Usage
 
-The script is run from the command line.
+The script is run from the command line. Here's a basic example and the help output:
 
-**Basic Example:**
+**Basic Invocation:**
 
 ```bash
-python playlist-maker.py input_playlist.txt
-
-usage: playlist-maker.py [-h] [-l LIBRARY] [--mpd-music-dir MPD_MUSIC_DIR]
-                         [-o OUTPUT_DIR] [--missing-dir MISSING_DIR]
-                         [-m [MPD_PLAYLIST_DIR]] [-t [0-100]]
-                         [--live-penalty [0.0-1.0]] [--log-file LOG_FILE]
-                         [--log-mode {append,overwrite}]
-                         [--log-level {DEBUG,INFO,WARNING,ERROR}]
-                         [-e EXTENSIONS [EXTENSIONS ...]]
-                         [--live-album-keywords LIVE_ALBUM_KEYWORDS [LIVE_ALBUM_KEYWORDS ...]]
-                         [--strip-keywords STRIP_KEYWORDS [STRIP_KEYWORDS ...]] [-i]
-                         playlist_file
-
-Generate M3U playlists by matching 'Artist - Track' lines against a music library.
-
-positional arguments:
-  playlist_file         Input text file (one 'Artist - Track' per line).
-
-options:
-  -h, --help            show this help message and exit
-  -l LIBRARY, --library LIBRARY
-                        Music library path to scan. (default: ~/music)
-  --mpd-music-dir MPD_MUSIC_DIR
-                        MPD 'music_directory' path (for relative paths in M3U). Must
-                        match mpd.conf. (default: ~/music)
-  -o OUTPUT_DIR, --output-dir OUTPUT_DIR
-                        Output directory for generated M3U playlists. (default:
-                        ./playlists)
-  --missing-dir MISSING_DIR
-                        Directory to save lists of tracks that were not found or
-                        skipped. (default: ./missing-tracks)
-  -m [MPD_PLAYLIST_DIR], --mpd-playlist-dir [MPD_PLAYLIST_DIR]
-                        Optionally copy the generated M3U to MPD's
-                        'playlist_directory'. If flag is present without a value,
-                        uses the default path. Provide a path to override the
-                        default. (default: ~/.config/mpd/playlists)
-  -t [0-100], --threshold [0-100]
-                        Minimum fuzzy match score [0-100] required for
-                        title/filename match. (default: 75)
-  --live-penalty [0.0-1.0]
-                        Score multiplier (penalty) for library tracks marked as 'live'
-                        when the input track is not. Lower value = higher penalty
-                        (e.g., 0.75 means score * 0.75). (default: 0.75)
-  --log-file LOG_FILE   Path for the log file. (default: <script_dir>/warning.log)
-  --log-mode {append,overwrite}
-                        Log file mode ('append' or 'overwrite'). (default:
-                        overwrite)
-  --log-level {DEBUG,INFO,WARNING,ERROR}
-                        Set the logging level for the file log. (default: INFO)
-  -e EXTENSIONS [EXTENSIONS ...], --extensions EXTENSIONS [EXTENSIONS ...]
-                        Space-separated list of supported audio file extensions (e.g.,
-                        .mp3 .flac). (default: ['.mp3', '.flac', '.ogg', '.m4a'])
-  --live-album-keywords LIVE_ALBUM_KEYWORDS [LIVE_ALBUM_KEYWORDS ...]
-                        Space-separated list of regex patterns (case-insensitive) to
-                        identify live albums by title. (default: ['\\blive\\b',
-                        '\\bunplugged\\b', '\\bconcert\\b', 'live at', 'live in',
-                        'live from', 'official bootleg', 'acoustic sessions',
-                        'peel session[s]?', 'radio session[s]?', 'mtv unplugged'])
-  --strip-keywords STRIP_KEYWORDS [STRIP_KEYWORDS ...]
-                        Space-separated list of keywords (case-insensitive, treated
-                        as regex word boundaries) to strip from within parentheses
-                        during normalization (e.g., remix edit version). (default:
-                        ['remix', 'radio edit', 'edit', 'version', 'mix',
-                        'acoustic', 'mono', 'stereo', 'reprise', 'instrumental'])
-  -i, --interactive     Enable interactive mode to resolve ambiguous matches, handle
-                        missing tracks, or confirm substitutions (like live/studio).
-                        (default: False)
+python playlist_maker.py input_playlist.txt
+python playlist_maker.py -i --output-name-format "{basename:cp}_{YYYY}-{MM}-{DD}.m3u" your_playlist_name.txt
 ```
 
-## 2. Python Environment Setup Walkthrough
+**Help Output:**
 
-Here's a guide to setting up the necessary Python environment to run the script.
+```bash
+python playlist_maker.py --help
 
-**Goal:** Install Python (if needed), install the required packages (`mutagen`, `fuzzywuzzy`, `python-levenshtein`) into an isolated virtual environment, and run the script.
+usage:  playlist_maker.py [-h] [-l LIBRARY] [--mpd-music-dir MPD_MUSIC_DIR]
+                          [-o OUTPUT_DIR] [--missing-dir MISSING_DIR]
+                          [-m [MPD_PLAYLIST_DIR]] [-t [0-100]]
+                          [--live-penalty [0.0-1.0]]
+                          [--output-name-format OUTPUT_NAME_FORMAT]
+                          [--log-file LOG_FILE]
+                          [--log-mode {append,overwrite}]
+                          [--log-level {DEBUG,INFO,WARNING,ERROR}]
+                          [-e EXTENSIONS [EXTENSIONS ...]]
+                          [--live-album-keywords LIVE_ALBUM_KEYWORDS [LIVE_ALBUM_KEYWORDS ...]]
+                          [--strip-keywords STRIP_KEYWORDS [STRIP_KEYWORDS ...]]
+                          [-i]
+                          input_playlist_file.txt
 
-**Steps:**
+Generate M3U playlists by matching 'Artist - Track' lines against a music
+library.
 
-1.  **Check for Python Installation:**
-    *   Open your terminal or command prompt.
-    *   Type `python --version` and press Enter.
-    *   If you see `Python 3.x.y` (where x is ideally 7 or higher), you likely have Python 3 installed. You might need to try `python3 --version` on macOS or Linux.
-    *   If you get an error or see Python 2.x.y, you need to install Python 3.
+positional arguments:
+    playlist_file         Input text file (one 'Artist - Track' per line).
 
-2.  **Install Python 3 (If Needed):**
-    *   **Windows:**
-        *   Go to the official Python website: [https://www.python.org/downloads/windows/](https://www.python.org/downloads/windows/)
-        *   Download the latest stable Python 3 installer.
-        *   Run the installer. **Crucially, make sure to check the box that says "Add Python 3.x to PATH"** during installation. This makes it easier to run Python from the command prompt.
-        *   Verify by opening a *new* command prompt and running `python --version`.
-    *   **macOS:**
-        *   Python 3 might already be installed. Try `python3 --version`.
-        *   If not, download the installer from [https://www.python.org/downloads/macos/](https://www.python.org/downloads/macos/). Run it.
-        *   Alternatively, if you use Homebrew: `brew install python3`.
-        *   Verify in a *new* terminal window with `python3 --version`.
-    *   **Linux (Debian/Ubuntu/Mint):**
-        *   Python 3 is usually pre-installed. Verify with `python3 --version`.
-        *   If not, or if you need a newer version: `sudo apt update && sudo apt install python3 python3-pip python3-venv`
-    *   **Linux (Fedora/CentOS/RHEL):**
-        *   Verify with `python3 --version`.
-        *   If not: `sudo dnf install python3 python3-pip`
+options:
+    -h, --help            show this help message and exit
+    -l LIBRARY, --library LIBRARY
+                        Music library path. Cfg: Paths.library, Def: ~/music
+    --mpd-music-dir MPD_MUSIC_DIR
+                        MPD music_directory path. Cfg: Paths.mpd_music_dir,
+                        Def: ~/music
+    -o OUTPUT_DIR, --output-dir OUTPUT_DIR
+                        Output dir for M3U. Cfg: Paths.output_dir, Def:
+                        ./playlists
+    --missing-dir MISSING_DIR
+                        Dir for missing tracks list. Cfg: Paths.missing_dir,
+                        Def: ./missing-tracks
+    -m [MPD_PLAYLIST_DIR], --mpd-playlist-dir [MPD_PLAYLIST_DIR]
+                        Copy M3U to MPD dir. No value=use default/config. Cfg:
+                        Paths.mpd_playlist_dir
+    -t [0-100], --threshold [0-100]
+                        Min match score [0-100]. Cfg: Matching.threshold, Def:
+                        75
+    --live-penalty [0.0-1.0]
+                        Penalty for unwanted live match. Cfg:
+                        Matching.live_penalty, Def: 0.75
+    --output-name-format OUTPUT_NAME_FORMAT
+                        Custom format string for the output M3U filename.
+                        Placeholders: {basename}, {basename:transforms},
+                        {YYYY}, {YY}, {MM}, {DD}, {hh}, {mm}, {ss}.
+                        Transforms for basename (e.g., {basename:cp}): 'c'-
+                        capitalize words, 'u'-uppercase, 'l'-lowercase; 'p'-
+                        prettify spaces, 's'-hyphenate, '_'-underscorify.
+                        Example: "{basename:c}_{YYYY}-{MM}-{DD}.m3u"
+    --log-file LOG_FILE   Log file path. Cfg: Logging.log_file, Def:
+                        <script_dir>/warning.log
+    --log-mode {append,overwrite}
+                        Log file mode. Cfg: Logging.log_mode, Def: overwrite
+    --log-level {DEBUG,INFO,WARNING,ERROR}
+                        Log level for file. Cfg: Logging.log_level, Def: INFO
+    -e EXTENSIONS [EXTENSIONS ...], --extensions EXTENSIONS [EXTENSIONS ...]
+                        Audio extensions. Cfg: General.extensions, Def: .mp3
+                        .flac .ogg .m4a
+    --live-album-keywords LIVE_ALBUM_KEYWORDS [LIVE_ALBUM_KEYWORDS ...]
+                        Regex patterns for live albums. Cfg:
+                        Matching.live_album_keywords
+    --strip-keywords STRIP_KEYWORDS [STRIP_KEYWORDS ...]
+                        Keywords to strip from (). Cfg: Matching.strip_keywords
+    -i, --interactive     Enable interactive mode. Cfg: General.interactive,
+                        Def: false
+```
 
-3.  **Check/Ensure Pip:**
-    *   Pip is Python's package installer and usually comes with Python 3.4+.
-    *   Check its version: `pip --version` or `pip3 --version`.
-    *   It's good practice to upgrade pip:
-        ```bash
-        python -m pip install --upgrade pip
-        # Or maybe: python3 -m pip install --upgrade pip
-        ```
+**Configuration Files**
 
-4.  **Navigate to Your Project Directory:**
-    *   Open your terminal/command prompt.
-    *   Use the `cd` (change directory) command to go to the folder where you saved `playlist-maker.py`.
-        ```bash
-        cd path/to/your/playlist-maker-folder
-        ```
+The script can also be configured via two INI-style configuration files:
+`bash
+    playlist_maker.conf: Place this file in the same directory as playlist_maker.py.
+    `
 
-5.  **Create `requirements.txt` file:**
-    *   In your project directory, create a new text file named `requirements.txt`.
-    *   Add the following lines to this file:
+    ```bash
+    ~/.config/playlist-maker/config.ini: User-specific configuration located in your home directory's .config folder.
+    ```
 
-        ```txt
-        mutagen
-        fuzzywuzzy
-        python-levenshtein
-        # pandas # Optional: uncomment if you want to install pandas for better duration checks
-        ```
-    *   *Why `python-levenshtein`?* `fuzzywuzzy` uses it to calculate string similarity much faster. Without it, `fuzzywuzzy` will be slower and might show a warning.
+Settings in these files are overridden by command-line arguments. Refer to the comments within playlist*maker.py (near the DEFAULT* constants) or the script's help output for available options and their sections (e.g., [Paths], [Matching], [Logging], [General]).
 
-6.  **Create a Virtual Environment:**
-    *   This creates an isolated space for your project's dependencies, preventing conflicts with other Python projects.
-    *   In your terminal (while in the project directory), run:
-        ```bash
-        python -m venv venv
-        # Or on some systems: python3 -m venv venv
-        ```
-    *   This creates a folder named `venv` in your project directory.
+Example playlist_maker.conf structure:
 
-7.  **Activate the Virtual Environment:**
-    *   You need to activate the environment *each time* you work on the project in a new terminal session.
-    *   **Windows (Command Prompt):**
-        ```cmd
-        venv\Scripts\activate.bat
-        ```
-    *   **Windows (PowerShell):**
-        ```powershell
-        venv\Scripts\Activate.ps1
-        # If you get an error about execution policy, you might need to run:
-        # Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
-        # and then try activating again.
-        ```
-    *   **macOS / Linux (bash/zsh):**
-        ```bash
-        source venv/bin/activate
-        ```
-    *   **How to tell it's active:** Your terminal prompt will usually change to show `(venv)` at the beginning, like `(venv) C:\path\to\project>` or `(venv) user@machine:~/path/to/project$`.
+```ini
+[Paths]
+library = ~/Music/my-library
+mpd_music_dir = ~/Music/my-library
+output_dir = ./Generated Playlists
+# mpd_playlist_dir = ~/.mpd/playlists
 
-8.  **Install the Requirements:**
-    *   While the virtual environment is active (you see `(venv)` in the prompt), run:
-        ```bash
-        pip install -r requirements.txt
-        ```
-    *   This will download and install `mutagen`, `fuzzywuzzy`, and `python-levenshtein` (and `pandas` if you uncommented it) *into* the `venv` folder.
+[Matching]
+threshold = 80
+live_penalty = 0.7
 
-9.  **Run the Script:**
-    *   Now you can run the playlist maker script:
-        ```bash
-        python playlist-maker.py your_input_file.txt [other options...]
-        # Or possibly: python3 playlist-maker.py ...
-        # Use the -i or --interactive to interact with the playlist-maker.py to help solve issues.
-        ```
+[Logging]
+log_level = DEBUG
 
-10. **Deactivate the Virtual Environment (When Done):**
-    *   When you're finished working on the project in this terminal session, simply type:
-        ```bash
-        deactivate
-        ```
-    *   Your prompt should return to normal.
+[General]
+interactive = true
+extensions = .mp3 .flac .opus .m4a .ogg
 
-You now have a dedicated, isolated environment for the playlist maker! The next time you want to run it, just `cd` to the directory and activate the venv again (`source venv/bin/activate` or `venv\Scripts\activate.bat`).
+# Enable interactive mode by default? true/false, yes/no, 1/0.
+interactive = false
+```
 
----
+## Playlist Maker GUI
+
+The GUI version can be run from the command line similarly with the `playlist_maker_gui.py` file. It's a more user-friendly interface for generating M3U playlists.
+
+```bash
+python playlist_maker_gui.py -i --output-name-format "{basename:cp}_{YYYY}-{MM}-{DD}.m3u" your_playlist_name.txt
+
+# Or simply:
+
+python playlist_maker_gui.py your_playlist_name.txt
+```
