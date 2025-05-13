@@ -2,6 +2,12 @@
 
 This Python script converts simple text files containing `Artist - Track` listings into `.m3u` playlists suitable for anything that uses the standard .m3u playlist format. It intelligently matches the tracks against your local music library using fuzzy string matching and metadata analysis.
 
+## Concept
+
+"I want to easily create playlists using music from my own music library." With this method, you can easily concept the playlist in text files and run them through `playlist_maker.py` to generate .m3u playlists. Making playlists by hand is fun, but using AI to help generate them, curate them, and then quickly convert them to .m3u playlists using this script is what I've come up with so far. 
+
+The ultimate version is to somehow feed AI a database of my library, query it with playlist params, have it return the query with a playlist in the format that this script expects, and trigger this script to output the .m3u. I've gotten to the point where I've successfully used AI to trigger this script with an `Artist - Track` formatted playlist, but since it doesn't know what music I have, it is hit or miss with resulting playlists. That being said, I can spend a little more time curating AI generated playlists to fit the music I own in my music library. 
+
 ## Overview
 
 The script scans your specified music library, builds an index of your tracks (including metadata like artist, title, album, duration, and identifying live recordings), and then processes an input text file. For each `Artist - Track` line in the input file, it searches the library index for the best match. It generates an M3U playlist file with relative paths based on your music directory configuration, making it directly usable by any android music app or software that uses .m3u format playlists. It also features an interactive mode for resolving ambiguities and allows customizable output filenames.
