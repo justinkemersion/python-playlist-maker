@@ -150,19 +150,21 @@ def get_config(section, option, fallback=None, expected_type=str):
         return fallback
 
 # --- Normalization Functions ---
+# (Inside playlist_maker.py)
+# ... (imports) ...
+
 def normalize_and_detect_specific_live_format(s):
     """
-    Normalizes a string for matching (handling '&', '/', 'and', feat., common suffixes in parens)
+    Normalizes a string for matching (handling '&', '/', 'and', feat., common suffixes in parens, leading articles)
     and specifically detects if it contains '(live)' format in the original casing structure.
     Returns normalized string for matching and a boolean for live detection.
     Uses global PARENTHETICAL_STRIP_REGEX.
     """
-    global PARENTHETICAL_STRIP_REGEX
+    global PARENTHETICAL_STRIP_REGEX # Ensure it's accessible if used later
 
     if not isinstance(s, str): return "", False
 
     original_s_lower_for_live_check = s.lower()
-
     is_live_format = bool(re.search(r'\(\s*live[\s\W]*\)', original_s_lower_for_live_check, re.IGNORECASE))
 
     try:
@@ -174,44 +176,51 @@ def normalize_and_detect_specific_live_format(s):
     s_for_matching = normalized_s.lower()
     logging.debug(f"Norm Step 1 (Input='{s}'): NFD+Lower='{s_for_matching}' | LiveFormatDetected={is_live_format}")
 
-    s_for_matching = re.sub(r'\s*&\s*', ' ', s_for_matching)
-    s_for_matching = re.sub(r'\s*/\s*', ' ', s_for_matching)
-    s_for_matching = re.sub(r'\s+and\s+', ' ', s_for_matching)
-    logging.debug(f"Norm Step 2: Replace '&/and' -> '{s_for_matching}'")
+    # --- NEW: Strip leading articles ---
+    # Handles "the ", "a ", "an " at the beginning, case-insensitively.
+    # count=1 ensures it only removes one instance if a name genuinely starts with "The The..."
+    s_for_matching = re.sub(r"^(the|a|an)\s+", "", s_for_matching, flags=re.IGNORECASE, count=1).strip()
+    logging.debug(f"Norm Step 1b (Strip Articles): -> '{s_for_matching}'")
+    # --- END NEW ---
 
-    s_for_matching = re.sub(r'^\s*\d{1,3}[\s.-]+\s*', '', s_for_matching).strip()
-    logging.debug(f"Norm Step 3: Strip TrackNum -> '{s_for_matching}'")
+    s_for_matching = re.sub(r'\s*&\s*', ' ', s_for_matching) # "&"
+    s_for_matching = re.sub(r'\s*/\s*', ' ', s_for_matching) # "/"
+    s_for_matching = re.sub(r'\s+and\s+', ' ', s_for_matching) # "and"
+    logging.debug(f"Norm Step 2 (Replace '&/and'): -> '{s_for_matching}'")
+
+    s_for_matching = re.sub(r'^\s*\d{1,3}[\s.-]+\s*', '', s_for_matching).strip() # Leading track numbers
+    logging.debug(f"Norm Step 3 (Strip TrackNum): -> '{s_for_matching}'")
 
     def process_parenthetical_content(match):
         content = match.group(1).strip().lower()
-        logging.debug(f"Norm Step 4a: Examining Parenthesis Content: '{content}'")
+        logging.debug(f"Norm Step 4a (Examining Parenthesis): Content='{content}'")
 
         if re.fullmatch(r'live[\s\W]*', content, re.IGNORECASE):
-            logging.debug(f"  -> Keeping 'live' token.")
-            return ' live '
+            logging.debug(f"  -> Parenthesis: Keeping 'live' token.")
+            return ' live ' # Add space around 'live' to treat as separate token
 
         feat_match = re.match(r'(?:feat|ft|featuring|with)\.?\s*(.*)', content, re.IGNORECASE)
         if feat_match:
             feat_artist = feat_match.group(1).strip()
+            # Further normalize featured artist name for consistency if needed
             feat_artist_norm = ''.join(c for c in feat_artist if c.isalnum() or c.isspace())
             feat_artist_norm = re.sub(r'\s+', ' ', feat_artist_norm).strip()
-            logging.debug(f"  -> Keeping 'feat' token with normalized artist: 'feat {feat_artist_norm}'")
+            logging.debug(f"  -> Parenthesis: Keeping 'feat' token with normalized artist: 'feat {feat_artist_norm}'")
             return f' feat {feat_artist_norm} '
 
-        # Use the pre-compiled regex (check if it exists)
-        if PARENTHETICAL_STRIP_REGEX and PARENTHETICAL_STRIP_REGEX.search(content): # Use search, maybe not fullmatch
-             logging.debug(f"  -> Removing common suffix/term found in parenthesis: '{content}' matched by {PARENTHETICAL_STRIP_REGEX.pattern}")
-             return ''
+        if PARENTHETICAL_STRIP_REGEX and PARENTHETICAL_STRIP_REGEX.search(content):
+             logging.debug(f"  -> Parenthesis: Removing suffix/term based on strip_keywords: '{content}'")
+             return '' # Remove if it matches strip keywords
 
-        logging.debug(f"  -> Removing generic parenthesis content.")
-        return ''
-
+        logging.debug(f"  -> Parenthesis: Removing generic content (not live, feat, or strip keyword).")
+        return '' # Default to removing other parenthetical content
+    
     s_for_matching = re.sub(r'\(([^)]*)\)', process_parenthetical_content, s_for_matching)
-    logging.debug(f"Norm Step 4b: After Parenthesis Processing -> '{s_for_matching}'")
+    logging.debug(f"Norm Step 4b (After Parenthesis): -> '{s_for_matching}'")
 
-    s_for_matching = ''.join(c for c in s_for_matching if c.isalnum() or c.isspace())
-    s_for_matching = re.sub(r'\s+', ' ', s_for_matching).strip()
-    logging.debug(f"Norm Step 5 (Final): String='{s_for_matching}' | LiveDetected={is_live_format}")
+    s_for_matching = ''.join(c for c in s_for_matching if c.isalnum() or c.isspace()) # Keep only alphanumeric and spaces
+    s_for_matching = re.sub(r'\s+', ' ', s_for_matching).strip() # Consolidate multiple spaces
+    logging.debug(f"Norm Step 5 (Final Cleanup): -> '{s_for_matching}' | LiveDetected (from original string): {is_live_format}")
 
     return s_for_matching, is_live_format
 

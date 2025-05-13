@@ -238,13 +238,11 @@ options:
 
 The script can also be configured via two INI-style configuration files:
 
-    ```bash
-    playlist_maker.conf: Place this file in the same directory as playlist_maker.py.
-    ```
+```
+playlist_maker.conf: Place this file in the same directory as playlist_maker.py.
 
-    ```bash
-    ~/.config/playlist-maker/playlist_maker.conf: User-specific configuration located in your home directory's .config folder.
-    ```
+~/.config/playlist-maker/playlist_maker.conf: User-specific configuration located in your home directory's .config folder.
+```
 
 Settings in these files are overridden by command-line arguments. Refer to the comments within playlist*maker.py (near the DEFAULT* constants) or the script's help output for available options and their sections (e.g., [Paths], [Matching], [Logging], [General]).
 
