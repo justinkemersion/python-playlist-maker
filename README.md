@@ -18,15 +18,19 @@ Here's an example of the script scanning the library:
 
 When an ambiguous match occurs in interactive mode, you'll see a prompt like this:
 
-![Interactive Prompt Example](assets/playlist-maker-interactive-mode-version-choice.png)
+![Interactive Prompt Example 1](assets/playlist-maker-interactive-mode-version-choice.png)
 
 Here is another example of the interactive mode showing a prompt for a track selection:
 
-![Interactive Prompt Example](assets/playlist-maker-interactive-mode-alternative-track-selection.png)
+![Interactive Prompt Example 2](assets/playlist-maker-interactive-mode-alternative-track-selection.png)
+
+Another example highlighting a number of live options to choose from:
+
+![Interactive Prompt Example 3](assets/playlist-maker-interactive-mode-many-live-options-example.png)
 
 And finally, when the playlist is ready:
 
-![Playlist Output](assets/playlist-maker-completed.png)
+![Playlist Output Finished](assets/playlist-maker-completed.png)
 
 
 ## Features
