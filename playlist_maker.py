@@ -16,6 +16,20 @@ import re
 from datetime import datetime
 import random # Needed for interactive random choice
 import configparser # For reading config files
+try:
+    import pandas as pd
+    # Logging for this debug message will only appear if main() later sets DEBUG level
+    logging.debug("Pandas library found and imported for __main__ block.")
+except ImportError:
+    class DummyPandas:
+        def isna(self, val):
+            if val is None: return True
+            try: return val != val # NaN comparison trick
+            except TypeError: return False # Not comparable, not NaN
+    pd = DummyPandas()
+    # Log this at INFO because it's a noticeable fallback
+    # Will appear if main() sets INFO or DEBUG
+    logging.info("Pandas library not found for __main__ block; using basic duration checks.")
 
 # --- Configuration Defaults ---
 DEFAULT_SCAN_LIBRARY = "~/music"
@@ -828,7 +842,7 @@ def generate_playlist(tracks, input_playlist_path, output_dir_str, mpd_playlist_
         print(colorize("\nAll tracks included successfully.", Colors.GREEN))
 
 # --- Main Execution ---
-def main():
+def main(argv_list=None): # Can accept arguments for GUI usage
     global INTERACTIVE_MODE
     global PARENTHETICAL_STRIP_REGEX
     global config
@@ -857,6 +871,7 @@ def main():
         description=f"{Colors.BOLD}Generate M3U playlists by matching 'Artist - Track' lines against a music library.{Colors.RESET}",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
+
     # Set defaults to None to detect if they were set via command line
     parser.add_argument("playlist_file", help="Input text file (one 'Artist - Track' per line).")
     parser.add_argument("-l", "--library", default=None, help=f"Music library path. Cfg: Paths.library, Def: {DEFAULT_SCAN_LIBRARY}")
@@ -877,7 +892,12 @@ def main():
     parser.add_argument("--strip-keywords", nargs='+', default=None, help="Keywords to strip from (). Cfg: Matching.strip_keywords")
     parser.add_argument("-i", "--interactive", action="store_true", default=None, help="Enable interactive mode. Cfg: General.interactive, Def: false")
 
-    args = parser.parse_args()
+    # --- Argument Parser Setup (inside main as before) ---
+    # ...
+    if argv_list is None: # Running from command line
+        args = parser.parse_args()
+    else: # Called with specific args (e.g., from GUI)
+        args = parser.parse_args(argv_list)
 
     # --- Determine Final Configuration Values ---
     final_library_path = args.library if args.library is not None else get_config("Paths", "library", DEFAULT_SCAN_LIBRARY)
@@ -1039,20 +1059,44 @@ def main():
     logging.info("Playlist Maker script finished successfully.")
     print(f"\n{colorize('Done.', Colors.BOLD + Colors.GREEN)}")
 
+    return True # Or some status object/dict
 
 # --- Entry Point ---
 if __name__ == "__main__":
     # Dummy pandas for duration checking if real pandas not installed
+    # This setup_logging call is for when the script is run directly.
+    # If main() is imported, it's expected the importer (GUI) might set up its own logging
+    # or main() itself will re-init logging based on its args.
+    # The initial logging setup here is basic, mainly to catch very early errors
+    # before main() fully configures it based on arguments.
+    temp_log_path = Path.cwd() / DEFAULT_LOG_FILE_NAME # Default to CWD if run directly before path resolution
     try:
-        import pandas as pd
-        logging.debug("Pandas library found and imported.")
-    except ImportError:
-        class DummyPandas:
-            def isna(self, val):
-                if val is None: return True
-                try: return val != val
-                except TypeError: return False
-        pd = DummyPandas()
-        # Log message handled by logger config now, no need for print
+        if Path(__file__).parent.is_dir():
+            temp_log_path = Path(__file__).parent / DEFAULT_LOG_FILE_NAME
+    except NameError: # __file__ not defined (e.g. in interpreter)
+        pass
+    
+    # Basic initial logging setup - will be reconfigured in main() based on args/config
+    # This ensures any errors *before* main's full logging setup are caught.
+    # Minimal console output at this stage.
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
+
     # Execute main function
-    main()
+    try:
+        main() # This will call the full main function defined above
+    except SystemExit as e:
+        # Argparse calls sys.exit on errors like -h or invalid arguments.
+        # This allows the script to exit cleanly with the correct code.
+        # No need to log here as argparse usually prints its own messages.
+        sys.exit(e.code)
+    except KeyboardInterrupt:
+        logging.info("KeyboardInterrupt received, shutting down GUI.")
+        print("\nPlaylist Maker GUI closed via Ctrl+C.") # Print to console
+        sys.exit(1) # Exit with a non-zero code for interruption
+    except Exception as e:
+        # Catch any other unhandled exceptions from main() or other top-level code
+        # Log with full traceback for debugging
+        logging.critical(f"Unhandled critical error at top level: {e}", exc_info=True)
+        # Print a user-friendly error message as well
+        print(colorize(f"\nCritical error: {e}\nPlease check the log file for more details.", Colors.RED), file=sys.stderr)
+        sys.exit(1) # Exit with a non-zero code
