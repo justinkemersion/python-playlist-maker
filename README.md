@@ -12,7 +12,11 @@ The ultimate version is to somehow feed AI a database of my library, query it wi
 
 The script scans your specified music library, builds an index of your tracks (including metadata like artist, title, album, duration, and identifying live recordings), and then processes an input text file. For each `Artist - Track` line in the input file, it searches the library index for the best match. It generates an M3U playlist file with relative paths based on your music directory configuration, making it directly usable by any android music app or software that uses .m3u format playlists. It also features an interactive mode for resolving ambiguities and allows customizable output filenames.
 
-Here's an example of the script scanning the library:
+Here's an example of the script when it is initialized and scanning the library before generating the playlist:
+
+```bash
+python playlist_maker.py -i --output-name-format "{basename:cp}_{YYYY}-{MM}-{DD}.m3u" experimental_psych_pop.txt
+```
 
 ![Library Scan Output](assets/playlist-maker-library-scan.png)
 
