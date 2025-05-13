@@ -31,6 +31,9 @@ except ImportError:
     # Will appear if main() sets INFO or DEBUG
     logging.info("Pandas library not found for __main__ block; using basic duration checks.")
 
+# --- Configuration Defaults & Script Info ---
+SCRIPT_VERSION = "1.7.0" # Or whatever you decide your starting version is
+
 # --- Configuration Defaults ---
 DEFAULT_SCAN_LIBRARY = "~/music"
 DEFAULT_MPD_MUSIC_DIR_CONF = "~/music"
@@ -1073,6 +1076,12 @@ def main(argv_list=None): # Can accept arguments for GUI usage
     parser.add_argument("--live-album-keywords", nargs='+', default=None, help="Regex patterns for live albums. Cfg: Matching.live_album_keywords")
     parser.add_argument("--strip-keywords", nargs='+', default=None, help="Keywords to strip from (). Cfg: Matching.strip_keywords")
     parser.add_argument("-i", "--interactive", action="store_true", default=None, help="Enable interactive mode. Cfg: General.interactive, Def: false")
+    parser.add_argument(
+        '-v', '--version',
+        action='version',
+        version=f'%(prog)s {SCRIPT_VERSION}', # %(prog)s will be replaced by the script name
+        help="Show program's version number and exit."
+    )
 
     if argv_list is None: # Running from command line
         args = parser.parse_args()
@@ -1147,6 +1156,7 @@ def main(argv_list=None): # Can accept arguments for GUI usage
 
     # --- Log Effective Settings ---
     logging.info("="*30 + " Playlist Maker Started " + "="*30)
+    logging.info(f"Version: {SCRIPT_VERSION}") # Use the SCRIPT_VERSION constant
     # ... (logging all final settings as before)
     logging.info(f"  Output Filename Format (CLI arg): {args.output_name_format if args.output_name_format else 'Using default naming'}")
 

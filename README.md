@@ -226,7 +226,7 @@ Example playlist_maker.conf structure:
 [Paths]
 library = ~/Music/my-library
 mpd_music_dir = ~/Music/my-library
-output_dir = ./Generated Playlists
+output_dir = ./generated-playlists
 # mpd_playlist_dir = ~/.mpd/playlists
 
 [Matching]
@@ -255,3 +255,7 @@ python playlist_maker_gui.py -i --output-name-format "{basename:cp}_{YYYY}-{MM}-
 
 python playlist_maker_gui.py your_playlist_name.txt
 ```
+
+## Version
+
+Current version: **1.7.0**
