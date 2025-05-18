@@ -1,4 +1,6 @@
+# your_project_root/requirements.txt
 mutagen
 fuzzywuzzy
 python-levenshtein
-# pandas # Optional: uncomment if you want to install pandas for better duration checks
+openai>=1.3.0  # Specify a version or a minimum version for openai
+# pandas # Optional

@@ -1,6 +1,6 @@
 # playlist_maker/core/constants.py
 
-SCRIPT_VERSION = "2.0.0" # Or whatever you decide your starting version is
+SCRIPT_VERSION = "2.1.0" # Changed from 2.0.0
 
 # --- Configuration Defaults ---
 DEFAULT_SCAN_LIBRARY = "~/music"
@@ -22,3 +22,7 @@ DEFAULT_PARENTHETICAL_STRIP_KEYWORDS = [
     'mono', 'stereo', 'reprise', 'instrumental'
 ]
 DEFAULT_OUTPUT_NAME_FORMAT = "{basename:cp}_{YYYY}-{MM}-{DD}.m3u"
+
+# --- AI Defaults ---
+DEFAULT_AI_PROVIDER = "openai" # For future expansion if other providers are added
+DEFAULT_AI_MODEL = "gpt-3.5-turbo" # A common, cost-effective default

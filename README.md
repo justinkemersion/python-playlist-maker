@@ -39,6 +39,11 @@ And finally, when the playlist is ready:
 
 ## Features
 
+- **AI-Powered Playlist Generation (New!):**
+    - Optionally generate an initial "Artist - Track" list using an AI prompt (e.g., via OpenAI's GPT models).
+    - Requires configuration of an API key (OpenAI).
+    - Allows user to preview and confirm the AI-generated list before processing.
+    - Generated list is then matched against your local library like a text file input.
 - **Text List Input:** Reads simple `.txt` files with one `Artist - Track` per line.
 - **Library Scanning:** Scans your music library directory for supported audio files (`.mp3`, `.flac`, `.ogg`, `.m4a` by default).
 - **Metadata Extraction:** Uses `mutagen` to read artist, title, album, and duration tags.
@@ -66,6 +71,7 @@ And finally, when the playlist is ready:
     - `mutagen`
     - `fuzzywuzzy`
     - `python-levenshtein` (Recommended for `fuzzywuzzy` performance)
+    - `openai` (For AI playlist generation)
     - `pandas` (Optional, for enhanced duration checks; script has a fallback)
 
 ## Installation
@@ -78,6 +84,7 @@ And finally, when the playlist is ready:
     mutagen
     fuzzywuzzy
     python-levenshtein
+    openai>=1.3.0  # Specify a version or a minimum version for openai
     # pandas # Optional: uncomment if you want to install pandas
     ```
 
@@ -163,8 +170,14 @@ The script is run from the command line. Here's a basic example and the help out
 **Basic Invocation:**
 
 ```bash
+# Using a text file
 python run_cli.py input_playlist.txt
-python run_cli.py -i --output-name-format "{basename:cp}_{YYYY}-{MM}-{DD}.m3u" your_playlist_name.txt
+
+# Using an AI prompt
+python run_cli.py --ai-prompt "Acoustic songs for a rainy afternoon"
+
+# AI prompt with specific model and interactive mode
+python run_cli.py -i --ai-prompt "Obscure 70s psych rock" --ai-model gpt-4-turbo-preview
 ```
 
 **Help Output:**
@@ -172,72 +185,57 @@ python run_cli.py -i --output-name-format "{basename:cp}_{YYYY}-{MM}-{DD}.m3u" y
 ```bash
 python run_cli.py --help
 
-usage:  run_cli.py [-h] [-l LIBRARY] [--mpd-music-dir MPD_MUSIC_DIR]
-                          [-o OUTPUT_DIR] [--missing-dir MISSING_DIR]
-                          [-m [MPD_PLAYLIST_DIR]] [-t [0-100]]
-                          [--live-penalty [0.0-1.0]]
-                          [--output-name-format OUTPUT_NAME_FORMAT]
-                          [--log-file LOG_FILE]
-                          [--log-mode {append,overwrite}]
-                          [--log-level {DEBUG,INFO,WARNING,ERROR}]
-                          [-e EXTENSIONS [EXTENSIONS ...]]
-                          [--live-album-keywords LIVE_ALBUM_KEYWORDS [LIVE_ALBUM_KEYWORDS ...]]
-                          [--strip-keywords STRIP_KEYWORDS [STRIP_KEYWORDS ...]]
-                          [-i]
-                          input_playlist_file.txt
 
-Generate M3U playlists by matching 'Artist - Track' lines against a music
-library.
+usage: run_cli.py [-h] [--ai-prompt AI_PROMPT] [--ai-model AI_MODEL] [-l LIBRARY] [--mpd-music-dir MPD_MUSIC_DIR] [-o OUTPUT_DIR] [--missing-dir MISSING_DIR]
+                  [-m [MPD_PLAYLIST_DIR]] [-t [0-100]] [--live-penalty [0.0-1.0]] [--output-name-format OUTPUT_NAME_FORMAT] [--log-file LOG_FILE]
+                  [--log-mode {append,overwrite}] [--log-level {DEBUG,INFO,WARNING,ERROR}] [-e EXTENSIONS [EXTENSIONS ...]]
+                  [--live-album-keywords LIVE_ALBUM_KEYWORDS [LIVE_ALBUM_KEYWORDS ...]] [--strip-keywords STRIP_KEYWORDS [STRIP_KEYWORDS ...]] [-i] [-v]
+                  [playlist_file]
+
+Generate M3U playlists by matching 'Artist - Track' lines against a music library.
 
 positional arguments:
-    playlist_file         Input text file (one 'Artist - Track' per line).
+  playlist_file         Input text file (one 'Artist - Track' per line). Used if --ai-prompt is not. (default: None)
 
 options:
-    -h, --help            show this help message and exit
-    -l LIBRARY, --library LIBRARY
-                        Music library path. Cfg: Paths.library, Def: ~/music
-    --mpd-music-dir MPD_MUSIC_DIR
-                        MPD music_directory path. Cfg: Paths.mpd_music_dir,
-                        Def: ~/music
-    -o OUTPUT_DIR, --output-dir OUTPUT_DIR
-                        Output dir for M3U. Cfg: Paths.output_dir, Def:
-                        ./playlists
-    --missing-dir MISSING_DIR
-                        Dir for missing tracks list. Cfg: Paths.missing_dir,
-                        Def: ./missing-tracks
-    -m [MPD_PLAYLIST_DIR], --mpd-playlist-dir [MPD_PLAYLIST_DIR]
-                        Copy M3U to MPD dir. No value=use default/config. Cfg:
-                        Paths.mpd_playlist_dir
-    -t [0-100], --threshold [0-100]
-                        Min match score [0-100]. Cfg: Matching.threshold, Def:
-                        75
-    --live-penalty [0.0-1.0]
-                        Penalty for unwanted live match. Cfg:
-                        Matching.live_penalty, Def: 0.75
-    --output-name-format OUTPUT_NAME_FORMAT
-                        Custom format string for the output M3U filename.
-                        Placeholders: {basename}, {basename:transforms},
-                        {YYYY}, {YY}, {MM}, {DD}, {hh}, {mm}, {ss}.
-                        Transforms for basename (e.g., {basename:cp}): 'c'-
-                        capitalize words, 'u'-uppercase, 'l'-lowercase; 'p'-
-                        prettify spaces, 's'-hyphenate, '_'-underscorify.
-                        Example: "{basename:c}_{YYYY}-{MM}-{DD}.m3u"
-    --log-file LOG_FILE   Log file path. Cfg: Logging.log_file, Def:
-                        <script_dir>/warning.log
-    --log-mode {append,overwrite}
-                        Log file mode. Cfg: Logging.log_mode, Def: overwrite
-    --log-level {DEBUG,INFO,WARNING,ERROR}
-                        Log level for file. Cfg: Logging.log_level, Def: INFO
-    -e EXTENSIONS [EXTENSIONS ...], --extensions EXTENSIONS [EXTENSIONS ...]
-                        Audio extensions. Cfg: General.extensions, Def: .mp3
-                        .flac .ogg .m4a
-    --live-album-keywords LIVE_ALBUM_KEYWORDS [LIVE_ALBUM_KEYWORDS ...]
-                        Regex patterns for live albums. Cfg:
-                        Matching.live_album_keywords
-    --strip-keywords STRIP_KEYWORDS [STRIP_KEYWORDS ...]
-                        Keywords to strip from (). Cfg: Matching.strip_keywords
-    -i, --interactive     Enable interactive mode. Cfg: General.interactive,
-                        Def: false
+  -h, --help            show this help message and exit
+  --ai-prompt AI_PROMPT
+                        Generate initial playlist using an AI prompt (e.g., 'Make me a sad indie folk playlist'). This generates an 'Artist - Song' list that then gets
+                        processed. Overrides playlist_file. (default: None)
+  -l, --library LIBRARY
+                        Music library path. Cfg: Paths.library, Def: ~/music (default: None)
+  --mpd-music-dir MPD_MUSIC_DIR
+                        MPD music_directory path. Cfg: Paths.mpd_music_dir, Def: ~/music (default: None)
+  -o, --output-dir OUTPUT_DIR
+                        Output dir for M3U. Cfg: Paths.output_dir, Def: ./playlists (default: None)
+  --missing-dir MISSING_DIR
+                        Dir for missing tracks list. Cfg: Paths.missing_dir, Def: ./missing-tracks (default: None)
+  -m, --mpd-playlist-dir [MPD_PLAYLIST_DIR]
+                        Copy M3U to MPD dir. No value=use default/config. Cfg: Paths.mpd_playlist_dir (default: None)
+  -t, --threshold [0-100]
+                        Min match score [0-100]. Cfg: Matching.threshold, Def: 75 (default: None)
+  --live-penalty [0.0-1.0]
+                        Penalty for unwanted live match. Cfg: Matching.live_penalty, Def: 0.75 (default: None)
+  --output-name-format OUTPUT_NAME_FORMAT
+                        Custom format string for the output M3U filename. Placeholders: {basename}, {basename:transforms}, {YYYY}, {YY}, {MM}, {DD}, {hh}, {mm}, {ss}.
+                        Transforms for basename (e.g., {basename:cp}): 'c'-capitalize words, 'u'-uppercase, 'l'-lowercase; 'p'-prettify spaces, 's'-hyphenate,
+                        '_'-underscorify. Example: "{basename:cp}_{YYYY}-{MM}-{DD}.m3u" (Configurable, PyDef: {basename:cp}_{YYYY}-{MM}-{DD}.m3u) (default: None)
+  --log-file LOG_FILE   Log file path. Cfg: Logging.log_file, Def: <project_root>/warning.log (default: None)
+  --log-mode {append,overwrite}
+                        Log file mode. Cfg: Logging.log_mode, Def: overwrite (default: None)
+  --log-level {DEBUG,INFO,WARNING,ERROR}
+                        Log level for file. Cfg: Logging.log_level, Def: INFO (default: None)
+  -e, --extensions EXTENSIONS [EXTENSIONS ...]
+                        Audio extensions. Cfg: General.extensions, Def: .mp3 .flac .ogg .m4a (default: None)
+  --live-album-keywords LIVE_ALBUM_KEYWORDS [LIVE_ALBUM_KEYWORDS ...]
+                        Regex patterns for live albums. Cfg: Matching.live_album_keywords (default: None)
+  --strip-keywords STRIP_KEYWORDS [STRIP_KEYWORDS ...]
+                        Keywords to strip from (). Cfg: Matching.strip_keywords (default: None)
+  -i, --interactive     Enable interactive mode. Cfg: General.interactive, Def: false (default: None)
+  -v, --version         Show program's version number and exit.
+
+AI Playlist Generation Options (used with --ai-prompt):
+  --ai-model AI_MODEL   Specify the AI model to use (e.g., gpt-4-turbo-preview). Cfg: AI.model, PyDef: gpt-3.5-turbo (default: None)
 ```
 
 **Configuration Files**
@@ -274,6 +272,15 @@ extensions = .mp3 .flac .opus .m4a .ogg
 
 # Enable interactive mode by default? true/false, yes/no, 1/0.
 interactive = false
+
+[AI]
+# Your OpenAI API key. Can be set here or via OPENAI_API_KEY environment variable.
+# If left blank and OPENAI_API_KEY is not set, AI features will be disabled when an AI prompt is used.
+api_key = YOUR_OPENAI_API_KEY_GOES_HERE
+
+# Default AI model to use if --ai-model is not specified on the command line.
+# Examples: gpt-3.5-turbo, gpt-4-turbo-preview, gpt-4
+model = gpt-3.5-turbo
 ```
 
 ## Playlist Maker GUI
@@ -289,5 +296,4 @@ python playlist_maker_gui.py your_playlist_name.txt
 ```
 
 ## Version
-
-Current version: **2.0.0**
+Current version: **2.1.0**
