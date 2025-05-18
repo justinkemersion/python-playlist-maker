@@ -1,0 +1,454 @@
+# playlist_maker/app.py
+
+import os
+import sys
+import logging
+from pathlib import Path
+import re # For regex compilation in main
+from datetime import datetime # For filename generation
+
+# --- Bootstrap Logging (runs when module is imported) ---
+# This ensures that any errors during the import process of app.py or its
+# dependencies have a chance to be logged *before* main() gets to its robust setup_logging.
+try:
+    # For bootstrap, log to a known, writable location.
+    # Using a user cache directory is often a good choice.
+    bootstrap_log_dir = Path.home() / ".cache" / "playlist-maker" / "logs"
+    bootstrap_log_dir.mkdir(parents=True, exist_ok=True)
+    bootstrap_log_file = bootstrap_log_dir / "app_bootstrap.log"
+    
+    # BasicConfig for bootstrap:
+    # - `force=True` allows main's setup_logging to reconfigure without issue.
+    # - `filemode='a'` to append bootstrap errors over time.
+    logging.basicConfig(
+        level=logging.DEBUG, # Capture all details for bootstrap issues
+        format="%(asctime)s - BOOTSTRAP - %(levelname)s - [%(name)s:%(funcName)s:%(lineno)d] - %(message)s",
+        filename=str(bootstrap_log_file),
+        filemode='a',
+        force=True
+    )
+    logging.info(f"Bootstrap logging for '{__name__}' module initialized. Log file: {bootstrap_log_file}")
+except Exception as e:
+    # If bootstrap logging itself fails, print to stderr as a last resort.
+    print(f"CRITICAL BOOTSTRAP LOGGING FAILED: {e}. Further log messages may be lost until main setup.", file=sys.stderr)
+# --- End Bootstrap Logging ---
+
+
+# --- Project-specific Imports ---
+# Core
+from .core import constants # Note the relative import '.'
+from .core.library_service import LibraryService
+from .core.matching_service import MatchingService, InteractionRequired
+from .core.playlist_service import PlaylistService
+
+# UI
+from .ui.cli_interface import Colors, Symbols, colorize
+from .ui.argument_parser import parse_arguments
+from .ui.interactive_prompts import prompt_user_for_choice, prompt_album_selection_or_skip
+
+# Utils
+from .utils.logging_setup import setup_logging
+from .utils.file_utils import format_output_filename
+from .utils.normalization_utils import normalize_and_detect_specific_live_format, check_album_for_live_indicators # If still needed directly by main
+# config.manager is used via get_config_value, which is fine.
+from .config.manager import load_config_files, get_config_value
+
+
+# --- Global Application State (scoped to this module if possible, or passed around) ---
+# These are set by main() and used by functions it calls (or passed as params)
+INTERACTIVE_MODE: bool = False
+PARENTHETICAL_STRIP_REGEX = None # Compiled regex object
+
+
+def main(argv_list=None) -> dict: # main now explicitly returns a dict for status
+    """
+    Main application orchestration logic.
+    Parses arguments, loads config, initializes services, processes playlist, and writes output.
+    Returns a dictionary indicating success or failure and any skipped tracks.
+    """
+    global INTERACTIVE_MODE, PARENTHETICAL_STRIP_REGEX # Allow main to modify these module-level globals
+
+    # --- 1. Initial Setup: Project Root, Config, Args ---
+    project_root_dir = Path.cwd()
+    try:
+        # If app.py is in playlist_maker/, __file__.parent.parent is project_root
+        project_root_dir = Path(__file__).resolve().parent.parent
+    except NameError: # __file__ not defined (e.g., interactive testing, though unlikely for app entry)
+        logging.warning("Could not determine project root from __file__, using CWD.")
+        pass # Keep CWD
+    
+    # Load configurations (from config.manager)
+    # load_config_files now takes project_root_dir to find local .conf
+    loaded_config_files = load_config_files(project_root_dir)
+    
+    # Parse command-line arguments (from ui.argument_parser)
+    args = parse_arguments(argv_list)
+
+    # --- 2. Determine Final Configuration Values ---
+    # This extensive block uses get_config_value and args to resolve all settings
+    # (Copied from your previous main, using constants.DEFAULT_... for fallbacks)
+    final_library_path = args.library if args.library is not None else get_config_value("Paths", "library", constants.DEFAULT_SCAN_LIBRARY)
+    final_mpd_music_dir = args.mpd_music_dir if args.mpd_music_dir is not None else get_config_value("Paths", "mpd_music_dir", constants.DEFAULT_MPD_MUSIC_DIR_CONF)
+    final_output_dir_str = args.output_dir if args.output_dir is not None else get_config_value("Paths", "output_dir", constants.DEFAULT_OUTPUT_DIR)
+    final_missing_dir_str = args.missing_dir if args.missing_dir is not None else get_config_value("Paths", "missing_dir", constants.DEFAULT_MISSING_TRACKS_DIR)
+    
+    final_mpd_playlist_dir_str = None
+    if args.mpd_playlist_dir is not None:
+        if args.mpd_playlist_dir == "USE_DEFAULT_OR_CONFIG":
+             config_val = get_config_value("Paths", "mpd_playlist_dir", fallback="USE_DEFAULT_CONST")
+             if config_val == "USE_DEFAULT_CONST": final_mpd_playlist_dir_str = constants.DEFAULT_MPD_PLAYLIST_DIR_CONF
+             elif config_val: final_mpd_playlist_dir_str = config_val
+             else: final_mpd_playlist_dir_str = None
+        else: final_mpd_playlist_dir_str = args.mpd_playlist_dir
+    else:
+        config_val = get_config_value("Paths", "mpd_playlist_dir", fallback=None)
+        final_mpd_playlist_dir_str = config_val if config_val else None
+
+    final_threshold = args.threshold if args.threshold is not None else get_config_value("Matching", "threshold", constants.DEFAULT_MATCH_THRESHOLD, int)
+    final_live_penalty = args.live_penalty if args.live_penalty is not None else get_config_value("Matching", "live_penalty", constants.DEFAULT_LIVE_PENALTY_FACTOR, float)
+    final_live_album_kws = args.live_album_keywords if args.live_album_keywords is not None else get_config_value("Matching", "live_album_keywords", constants.DEFAULT_LIVE_ALBUM_KEYWORDS, list)
+    final_strip_keywords = args.strip_keywords if args.strip_keywords is not None else get_config_value("Matching", "strip_keywords", constants.DEFAULT_PARENTHETICAL_STRIP_KEYWORDS, list)
+    
+    final_output_name_format_str = args.output_name_format
+    if final_output_name_format_str is None:
+        final_output_name_format_str = get_config_value("General", "output_name_format", constants.DEFAULT_OUTPUT_NAME_FORMAT, str)
+
+    # Log File Path determination (project_root_dir is defined above)
+    default_log_path = project_root_dir / constants.DEFAULT_LOG_FILE_NAME
+    config_log_file_str = get_config_value("Logging", "log_file", str(default_log_path))
+    final_log_file_path_obj = args.log_file if args.log_file is not None else Path(config_log_file_str)
+
+    final_log_mode = args.log_mode if args.log_mode is not None else get_config_value("Logging", "log_mode", "overwrite")
+    final_log_level_str = args.log_level if args.log_level is not None else get_config_value("Logging", "log_level", "INFO")
+    final_extensions = args.extensions if args.extensions is not None else get_config_value("General", "extensions", constants.DEFAULT_SUPPORTED_EXTENSIONS, list)
+
+    # Set global INTERACTIVE_MODE (used by prompt functions if they are not passed this state)
+    if args.interactive is True: INTERACTIVE_MODE = True
+    elif args.interactive is None: INTERACTIVE_MODE = get_config_value("General", "interactive", fallback=False, expected_type=bool)
+    else: INTERACTIVE_MODE = False
+    logging.info(f"Interactive mode: {INTERACTIVE_MODE}")
+
+    # --- 3. Path Expansion and Validation ---
+    final_library_path = os.path.expanduser(final_library_path)
+    final_mpd_music_dir_str = os.path.expanduser(final_mpd_music_dir) # String version
+    final_output_dir_str = os.path.expanduser(final_output_dir_str)
+    final_missing_dir_str = os.path.expanduser(final_missing_dir_str)
+    if final_mpd_playlist_dir_str: final_mpd_playlist_dir_str = os.path.expanduser(final_mpd_playlist_dir_str)
+    
+    try: # Resolve log path *after* expansion
+        final_log_file_path_obj = Path(os.path.expanduser(str(final_log_file_path_obj))).resolve()
+    except Exception as e: # Broad catch for issues like non-existent parent during resolve
+        # Attempt to use the unverified path but log a clear warning.
+        # setup_logging itself has fallbacks if directory creation fails.
+        unverified_log_path = Path(os.path.expanduser(str(final_log_file_path_obj)))
+        logging.warning(f"Could not fully resolve log path '{final_log_file_path_obj}': {e}. Attempting to use unverified path: {unverified_log_path}", exc_info=True)
+        final_log_file_path_obj = unverified_log_path
+
+
+    # Post-processing / Validation of config values
+    if not (0 <= final_threshold <= 100):
+        logging.error(f"Invalid threshold: {final_threshold}. Must be 0-100.")
+        print(colorize(f"Error: --threshold ({final_threshold}) must be between 0 and 100.", Colors.RED), file=sys.stderr)
+        sys.exit(2) # Argparse typically uses exit code 2 for bad arguments
+    if not (0.0 <= final_live_penalty <= 1.0):
+        logging.error(f"Invalid live penalty: {final_live_penalty}. Must be 0.0-1.0.")
+        print(colorize(f"Error: --live-penalty ({final_live_penalty}) must be between 0.0 and 1.0.", Colors.RED), file=sys.stderr)
+        sys.exit(2)
+    final_supported_extensions_tuple = tuple(ext.lower() if ext.startswith('.') else '.' + ext.lower() for ext in final_extensions if ext)
+
+    # --- 4. Setup Application Logging ---
+    # This call will reconfigure logging, potentially overwriting bootstrap config.
+    setup_logging(final_log_file_path_obj, final_log_mode) # From utils.logging_setup
+    log_level_map = {'DEBUG': logging.DEBUG, 'INFO': logging.INFO, 'WARNING': logging.WARNING, 'ERROR': logging.ERROR}
+    final_log_level = log_level_map.get(final_log_level_str.upper(), logging.INFO)
+    logging.getLogger().setLevel(final_log_level) # Set the root logger's level for file output
+
+    # Log effective settings
+    logging.info(f"--- Playlist Maker {constants.SCRIPT_VERSION} Initializing ---")
+    logging.info(f"Command: {' '.join(sys.argv)}")
+    logging.info(f"Loaded config files: {', '.join(map(str, loaded_config_files)) if loaded_config_files else 'None'}")
+    # Log other key final_... values if desired for debugging.
+    logging.info(f"Effective log file: {final_log_file_path_obj}, Mode: {final_log_mode}, Level: {final_log_level_str}")
+    logging.info(f"Effective output name format: {final_output_name_format_str}")
+
+
+    # --- 5. Compile Regex Patterns ---
+    # Compile live album keywords regex
+    live_album_keywords_regex_obj = None
+    if final_live_album_kws:
+        try:
+            live_album_regex_pattern = r"(" + "|".join(final_live_album_kws) + r")"
+            live_album_keywords_regex_obj = re.compile(live_album_regex_pattern, re.IGNORECASE)
+            logging.info(f"Using live album regex: {live_album_regex_pattern}")
+        except re.error as e:
+            logging.error(f"Invalid regex pattern for live album keywords: {e}", exc_info=True)
+            print(colorize(f"Error: Invalid live album regex: {e}", Colors.RED), file=sys.stderr)
+            return {"success": False, "error": f"Invalid live album regex: {e}", "skipped_tracks": []}
+    
+    # Compile parenthetical strip regex (sets module-level global PARENTHETICAL_STRIP_REGEX)
+    if final_strip_keywords:
+        try:
+            strip_keywords_pattern = r"|".join(r"(?:\W|^)" + re.escape(kw) + r"(?:\W|$)" for kw in final_strip_keywords)
+            PARENTHETICAL_STRIP_REGEX = re.compile(strip_keywords_pattern, re.IGNORECASE)
+            logging.info(f"Using parenthetical strip regex: {strip_keywords_pattern}")
+        except re.error as e:
+            logging.error(f"Invalid regex pattern for strip keywords: {e}", exc_info=True)
+            print(colorize(f"Error: Invalid strip keyword regex: {e}", Colors.RED), file=sys.stderr)
+            return {"success": False, "error": f"Invalid strip keyword regex: {e}", "skipped_tracks": []}
+
+    # --- 6. Resolve Essential File Paths (Absolute) ---
+    try:
+        input_playlist_file_abs_path = Path(args.playlist_file).resolve(strict=True)
+        library_abs_path = Path(final_library_path).resolve(strict=True)
+        mpd_music_dir_abs_path = Path(final_mpd_music_dir_str).resolve(strict=True) # For M3U relative paths
+        # Output directories: resolve, and they will be created by PlaylistService if they don't exist.
+        output_dir_abs_path = Path(final_output_dir_str).resolve()
+        missing_tracks_dir_abs_path = Path(final_missing_dir_str).resolve()
+        logging.info(f"Resolved input playlist: {input_playlist_file_abs_path}")
+    except FileNotFoundError as e:
+        logging.error(f"Essential path does not exist after resolving: {e}. Exiting.", exc_info=True)
+        print(colorize(f"Error: Essential path not found: {e}", Colors.RED), file=sys.stderr)
+        return {"success": False, "error": f"Essential path not found: {e}", "skipped_tracks": []}
+    except Exception as e: # Catch other resolution errors
+        logging.error(f"Error resolving essential paths: {e}", exc_info=True)
+        print(colorize(f"Error resolving paths: {e}", Colors.RED), file=sys.stderr)
+        return {"success": False, "error": f"Error resolving paths: {e}", "skipped_tracks": []}
+
+    # --- 7. Determine Output M3U Filename ---
+    # Uses format_output_filename from utils.file_utils
+    raw_playlist_basename = input_playlist_file_abs_path.stem
+    current_time = datetime.now()
+    generated_m3u_filename_stem_ext = format_output_filename(
+        final_output_name_format_str,
+        raw_playlist_basename,
+        current_time
+    )
+    full_output_m3u_filepath = output_dir_abs_path / generated_m3u_filename_stem_ext
+    logging.info(f"Target M3U output filepath: {full_output_m3u_filepath}")
+
+    # --- 8. Initialize Services ---
+    library_service = LibraryService()
+    matching_service = MatchingService(INTERACTIVE_MODE) # Pass interactive status
+    playlist_service = PlaylistService()
+
+    # --- Print User-Facing Header ---
+    print(f"{Colors.CYAN}{Colors.BOLD}=== Playlist Maker {constants.SCRIPT_VERSION} ==={Colors.RESET}")
+    if loaded_config_files: print(f"{Symbols.INFO} Config files loaded: {', '.join(map(str, loaded_config_files))}")
+    else: print(f"{Symbols.INFO} No local configuration files loaded (or files were empty/invalid).")
+    print(f"{Colors.CYAN}{'-'*45}{Colors.RESET}")
+
+
+    # --- 9. Read Input Playlist ---
+    print(f"Reading input file: {input_playlist_file_abs_path}...")
+    try:
+        # playlist_service.read_input_playlist returns list of (artist_str, title_str) tuples
+        input_track_tuples = playlist_service.read_input_playlist(str(input_playlist_file_abs_path))
+    except FileNotFoundError:
+        # Error already logged by service, main provides user message if needed
+        print(colorize(f"Error: Input playlist file '{input_playlist_file_abs_path}' not found.", Colors.RED), file=sys.stderr)
+        return {"success": False, "error": "Input playlist file not found.", "skipped_tracks": []}
+    except Exception as e: # Catch other errors from read_input_playlist
+        print(colorize(f"Error reading input playlist '{input_playlist_file_abs_path}': {e}", Colors.RED), file=sys.stderr)
+        logging.error(f"Failed to read input playlist: {e}", exc_info=True)
+        return {"success": False, "error": f"Error reading input playlist: {e}", "skipped_tracks": []}
+
+    if not input_track_tuples:
+        print(colorize(f"Error: No valid 'Artist - Track' lines found in '{input_playlist_file_abs_path}'.", Colors.RED), file=sys.stderr)
+        return {"success": False, "error": "No valid tracks in input file", "skipped_tracks": []}
+    print(f"Read {len(input_track_tuples)} track entries.")
+
+
+    # --- 10. Scan Music Library ---
+    # library_service.scan_library prints its own progress and summary
+    scan_successful = library_service.scan_library(
+        str(library_abs_path),
+        final_supported_extensions_tuple,
+        live_album_keywords_regex_obj, # Pass compiled regex
+        PARENTHETICAL_STRIP_REGEX      # Pass compiled regex (module-level global)
+    )
+    if not scan_successful:
+        # Error message already printed by library_service.scan_library
+        logging.error("MAIN: Library scan reported as not successful or found no tracks. Aborting.")
+        # GUI needs a clear signal
+        return {"success": False, "error": "Library scan failed or found no tracks", "skipped_tracks": []}
+    current_library_index = library_service.get_library_index() # Get the scanned index
+
+
+    # --- 11. Process Tracks & Build M3U Data Structures ---
+    m3u_lines_for_file = ["#EXTM3U"] # Initialize M3U content list
+    skipped_track_details_for_file = []   # For the -missing-tracks.txt file
+    found_tracks_count = 0              # Count of tracks successfully added to M3U
+
+    print(f"\n{colorize('Processing Playlist:', Colors.CYAN)} {colorize(str(len(input_track_tuples)), Colors.BOLD)} input tracks.")
+    print(f"{Colors.CYAN}{'-'*45}{Colors.RESET}")
+
+    for index, (input_artist_str, input_title_str) in enumerate(input_track_tuples):
+        original_input_line = f"{input_artist_str} - {input_title_str}" # For logging and missing file
+        
+        if index > 0: print(f"{Colors.BLUE}{'.' * 20}{Colors.RESET}") # Visual separator
+        print(f"{Colors.CYAN}[{index + 1:02d}/{len(input_track_tuples):02d}]{Colors.RESET} {colorize('Input:', Colors.BOLD)} {original_input_line}")
+
+        match_result_obj = matching_service.find_best_track_match(
+            input_artist_str, input_title_str,
+            final_threshold, final_live_penalty,
+            current_library_index, # Pass the scanned library index
+            PARENTHETICAL_STRIP_REGEX # Pass compiled regex (module-level global)
+        )
+
+        chosen_match_entry_dict = None # Will store the dict of the chosen track, or None
+        
+        if isinstance(match_result_obj, InteractionRequired):
+            interaction_data = match_result_obj # For clarity
+            # Call appropriate UI prompt function (from ui.interactive_prompts)
+            # These functions return the chosen entry dict or None.
+            if interaction_data.reason == "no_artist_match":
+                print(colorize(f"\nNo potential artists found containing '{interaction_data.input_artist}'. Offering skip/random.", Colors.YELLOW))
+                chosen_match_entry_dict = prompt_user_for_choice(
+                    interaction_data.input_artist, interaction_data.input_track,
+                    [], [], # No candidates, no specific artist matches for this reason
+                    interaction_data.is_input_explicitly_live_format,
+                    interaction_data.match_threshold
+                )
+            elif interaction_data.reason == "no_direct_match_album_selection_possible":
+                print(colorize(f"\nNo direct match for '{interaction_data.input_artist} - {interaction_data.input_track}'. Offering album selection.", Colors.YELLOW))
+                chosen_match_entry_dict = prompt_album_selection_or_skip(
+                    interaction_data.input_artist, interaction_data.input_track,
+                    interaction_data.artist_matches, # Tracks by this artist for album selection
+                    interaction_data.is_input_explicitly_live_format,
+                    interaction_data.match_threshold,
+                    current_library_index, # Full index for listing album tracks
+                    PARENTHETICAL_STRIP_REGEX # For normalization within prompt
+                )
+            elif interaction_data.reason == "no_direct_match_basic_skip_random":
+                 print(colorize(f"\nNo direct match for '{interaction_data.input_artist} - {interaction_data.input_track}'. Offering skip/random.", Colors.YELLOW))
+                 chosen_match_entry_dict = prompt_user_for_choice(
+                    interaction_data.input_artist, interaction_data.input_track,
+                    interaction_data.candidates, # Scored (sub-threshold) candidates
+                    interaction_data.artist_matches,
+                    interaction_data.is_input_explicitly_live_format,
+                    interaction_data.match_threshold
+                )
+            elif interaction_data.reason == "multiple_qualified_matches":
+                logging.info(f"MAIN: Multiple qualified matches for '{interaction_data.input_artist} - {interaction_data.input_track}'. Prompting user.")
+                chosen_match_entry_dict = prompt_user_for_choice(
+                    interaction_data.input_artist, interaction_data.input_track,
+                    interaction_data.candidates, # Qualified candidates
+                    interaction_data.artist_matches,
+                    interaction_data.is_input_explicitly_live_format,
+                    interaction_data.match_threshold
+                )
+            
+            if chosen_match_entry_dict: # User made a selection from prompt
+                # Prompt functions should return cleaned entries (no temp '_' keys)
+                # If not, clean here: chosen_match_entry_dict = {k:v for k,v in chosen_match_entry_dict.items() if not k.startswith('_')}
+                print(f"  {Symbols.SUCCESS} {colorize('Matched (Interactive):', Colors.GREEN)} {colorize(Path(chosen_match_entry_dict['path']).name, Colors.MAGENTA)}")
+            else: # User skipped or no choice made during interaction
+                print(f"  {Symbols.FAILURE} {colorize('Skipped (Interactive):', Colors.RED)} User skipped or no choice made.")
+                skipped_track_details_for_file.append(f"{original_input_line} (Reason: Skipped by user or no choice made)")
+
+        elif match_result_obj is not None: # Direct match from service (non-interactive or single best)
+            chosen_match_entry_dict = match_result_obj # Already cleaned by MatchingService
+            print(f"  {Symbols.SUCCESS} {colorize('Matched (Auto):', Colors.GREEN)} {colorize(Path(chosen_match_entry_dict['path']).name, Colors.MAGENTA)}")
+        else: # No match from service, and not interactive, or no interaction path led to a choice
+            print(f"  {Symbols.FAILURE} {colorize('Skipped (Auto):', Colors.RED)} No suitable match found by service.")
+            skipped_track_details_for_file.append(f"{original_input_line} (Reason: No suitable match found)")
+
+        # If a match was chosen (either auto or interactive), add to M3U lines
+        if chosen_match_entry_dict:
+            found_tracks_count += 1
+            abs_file_path = Path(chosen_match_entry_dict['path'])
+            duration = chosen_match_entry_dict.get('duration', -1)
+            # Use matched artist/title if available, fallback to input
+            ext_artist = chosen_match_entry_dict.get('artist', input_artist_str) or input_artist_str
+            ext_title = chosen_match_entry_dict.get('title', input_title_str) or input_title_str
+            try:
+                relative_path_to_mpd = abs_file_path.relative_to(mpd_music_dir_abs_path)
+                m3u_lines_for_file.append(f"#EXTINF:{duration},{ext_artist} - {ext_title}")
+                m3u_lines_for_file.append(relative_path_to_mpd.as_posix())
+            except ValueError: # Path not relative to MPD dir
+                logging.warning(f"MAIN: Path '{abs_file_path}' not relative to MPD dir '{mpd_music_dir_abs_path}'. Skipping M3U entry for '{original_input_line}'.")
+                skipped_track_details_for_file.append(f"{original_input_line} (Reason: Path not in MPD tree - {abs_file_path})")
+                found_tracks_count -=1 # Correct count as this track is now considered skipped
+                print(f"  {Symbols.WARNING} {colorize('Skipped (Path Error):', Colors.YELLOW)} Not relative to MPD music directory.")
+        # If chosen_match_entry_dict is None, it was already added to skipped_track_details_for_file or handled by interactive skip message.
+
+    # --- 12. Write Output Files (M3U, Missing Tracks, MPD Copy) ---
+    try:
+        # Call PlaylistService to handle all file writing
+        write_operation_results = playlist_service.write_m3u_and_missing_files(
+            m3u_lines_content=m3u_lines_for_file,
+            skipped_track_inputs_for_file=skipped_track_details_for_file,
+            output_m3u_filepath=full_output_m3u_filepath, # Pass the full Path object
+            mpd_playlist_dir_str=final_mpd_playlist_dir_str, # Can be None
+            missing_tracks_dir_path=missing_tracks_dir_abs_path, # Pass the full Path object
+            input_playlist_path_for_header=str(input_playlist_file_abs_path),
+            total_input_tracks=len(input_track_tuples)
+        )
+
+        # --- UI Feedback based on what PlaylistService reported ---
+        if write_operation_results.get("m3u_path"):
+            print(f"\n{colorize('Generated playlist', Colors.GREEN + Colors.BOLD)} ({found_tracks_count}/{len(input_track_tuples)} tracks): {write_operation_results['m3u_path']}")
+        if write_operation_results.get("mpd_copy_path"):
+            print(f"{colorize('Copied playlist to MPD directory:', Colors.CYAN)} {write_operation_results['mpd_copy_path']}")
+        if write_operation_results.get("mpd_copy_error"): # If service reported an error during MPD copy
+            print(colorize(f"Warning: Failed to copy playlist to MPD directory: {write_operation_results['mpd_copy_error']}", Colors.YELLOW), file=sys.stderr)
+        
+        if write_operation_results.get("missing_file_path"):
+            print(f"{colorize('List of missing/skipped tracks saved to:', Colors.YELLOW)} {write_operation_results['missing_file_path']}")
+        elif skipped_track_details_for_file : # If there were skips but file wasn't written
+             if write_operation_results.get("missing_file_error"): # If service reported an error
+                  print(colorize(f"Warning: Failed to write missing tracks file: {write_operation_results['missing_file_error']}", Colors.YELLOW), file=sys.stderr)
+             else: # Should not happen if skipped_track_details_for_file is true and no error
+                  print(colorize("Warning: Missing tracks list existed but was not written for an unknown reason.", Colors.YELLOW), file=sys.stderr)
+        
+        # Final summary message
+        if skipped_track_details_for_file:
+            logging.warning(f"--- Summary: Skipped {len(skipped_track_details_for_file)} tracks. See details in missing tracks file (if written).")
+            print(colorize(f"\nWarning: {len(skipped_track_details_for_file)} out of {len(input_track_tuples)} input tracks were skipped.", Colors.YELLOW))
+        elif found_tracks_count > 0 : # At least one track included, and no skips
+            logging.info("--- Summary: All input tracks were matched and included successfully.")
+            print(colorize("\nAll input tracks included successfully.", Colors.GREEN))
+        else: # No tracks found, no tracks skipped (e.g., empty input after filtering, or all failed pathing)
+            logging.info("--- Summary: No tracks processed or included in the playlist.")
+            print(colorize("\nNo tracks were included in the playlist.", Colors.YELLOW))
+
+    except IOError as e: # Catch M3U write failure specifically if raised by service
+        print(colorize(f"Error writing M3U playlist: {e}", Colors.RED), file=sys.stderr)
+        # Skipped tracks might still be valuable to return for GUI
+        return {"success": False, "error": str(e), "skipped_tracks": [line.split(" (Reason:")[0] for line in skipped_track_details_for_file]}
+    except Exception as e: # Catch any other unexpected error from service writing phase
+        logging.error(f"MAIN: Unexpected error during file writing phase: {e}", exc_info=True)
+        print(colorize(f"Unexpected error during file writing: {e}", Colors.RED), file=sys.stderr)
+        return {"success": False, "error": str(e), "skipped_tracks": [line.split(" (Reason:")[0] for line in skipped_track_details_for_file]}
+
+    logging.info(f"--- Playlist Maker {constants.SCRIPT_VERSION} processing completed. ---")
+    print(f"\n{colorize('DONE', Colors.BOLD + Colors.GREEN)}")
+    # Return list of original "Artist - Title" lines that were skipped for GUI/caller
+    return {"success": True, "skipped_tracks": [line.split(" (Reason:")[0] for line in skipped_track_details_for_file]}
+
+# Note: The `if __name__ == "__main__":` block that calls `main()` is NOT part of the `main()` function.
+# It should be at the very end of app.py, outside any function, if you want app.py to be
+# directly executable for some reason (though `python -m playlist_maker.app` is preferred).
+# If using `python -m`, that block isn't strictly necessary in app.py as main() is called by the runner.
+# However, having a simple runner in `if __name__ == "__main__":` within app.py can be useful for direct testing.
+#
+# if __name__ == "__main__":
+#     # This block would only execute if you run: python playlist_maker/app.py
+#     # It's better to use `python -m playlist_maker.app` or a dedicated root runner script.
+#     try:
+#         run_status = main()
+#         if isinstance(run_status, dict) and not run_status.get("success", True):
+#             sys.exit(1) # Indicate failure
+#         elif isinstance(run_status, int): # If main somehow returns an exit code
+#             sys.exit(run_status)
+#     except SystemExit as se:
+#         sys.exit(se.code) # Propagate sys.exit calls
+#     except KeyboardInterrupt:
+#         print("\nApplication interrupted by user (Ctrl+C).")
+#         sys.exit(130) # Standard exit code for Ctrl+C
+#     except Exception as e_top:
+#         # This is a last resort catch. Errors should ideally be handled more gracefully within main.
+#         logging.getLogger(__name__).critical("Top-level unhandled exception in app.py's __main__ block.", exc_info=True)
+#         print(colorize(f"\nCRITICAL UNHANDLED ERROR: {e_top}", Colors.RED + Colors.BOLD), file=sys.stderr)
+#         print(colorize("Please check logs for details.", Colors.RED), file=sys.stderr)
+#         sys.exit(1) # General error
