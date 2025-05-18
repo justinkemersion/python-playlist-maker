@@ -4,11 +4,11 @@ This Python script converts simple text files containing `Artist - Track` listin
 
 ## Concept
 
-"I want to easily create playlists using music from my own music library." With this method, you can easily concept the playlist in text files and run them through `run_cli.py` to generate .m3u playlists. Making playlists by hand is fun, but using AI to help generate them, curate them, and then quickly convert them to .m3u playlists using this script is what I've come up with so far.
+"I want to easily create playlists using music from my own music library." With this method, you can easily concept the playlist in text files or using the OpenAI API feature to generate them for you. If using OpenAI it automatically runs the playlist output through `run_cli.py` to generate .m3u playlists (see screengrab below). Making playlists by hand is fun, but using AI to help generate them, curate them, and then quickly convert them to .m3u playlists using this script is what I've come up with so far.
 
 ## Overview
 
-The script scans your specified music library, builds an index of your tracks (including metadata like artist, title, album, duration, and identifying live recordings), and then processes an input text file. For each `Artist - Track` line in the input file, it searches the library index for the best match. It generates an M3U playlist file with relative paths based on your music directory configuration, making it directly usable by any android music app or software that uses .m3u format playlists. It also features an interactive mode for resolving ambiguities and allows customizable output filenames.
+The app scans your specified music library, builds an index of your tracks (including metadata like artist, title, album, duration, and identifying live recordings), and then processes an input text file. For each `Artist - Track` line in the input file, it searches the library index for the best match. It generates an M3U playlist file with relative paths based on your music directory configuration, making it directly usable by any android music app or software that uses .m3u format playlists. It also features an interactive mode for resolving ambiguities and allows customizable output filenames.
 
 Here's an example of the script when it is initialized and scanning the library before generating the playlist:
 
