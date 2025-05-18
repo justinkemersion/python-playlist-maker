@@ -1,6 +1,6 @@
 # Playlist Maker (.m3u)
 
-This Python script uses OpenAI prompt or local text files containing `Artist - Track` listings into `.m3u` playlists suitable for anything that uses the standard .m3u playlist format. It intelligently matches the tracks against your local music library using fuzzy string matching and metadata analysis.
+This Python application uses OpenAI prompt or local text files containing `Artist - Track` listings into `.m3u` playlists suitable for anything that uses the standard .m3u playlist format. It intelligently matches the tracks against your local music library using fuzzy string matching and metadata analysis.
 
 ## Concept
 
