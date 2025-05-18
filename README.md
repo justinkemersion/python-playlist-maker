@@ -15,7 +15,7 @@ The script scans your specified music library, builds an index of your tracks (i
 Here's an example of the script when it is initialized and scanning the library before generating the playlist:
 
 ```bash
-python playlist_maker.py -i --output-name-format "{basename:cp}_{YYYY}-{MM}-{DD}.m3u" experimental_psych_pop.txt
+python run_cli.py experimental_psych_pop.txt
 ```
 
 ![Library Scan Output](assets/playlist-maker-library-scan.png)
@@ -70,7 +70,7 @@ And finally, when the playlist is ready:
 
 ## Installation
 
-1.  **Clone or Download:** Get the `playlist_maker.py` script and save it to your desired project directory.
+1.  **Clone or Download:** Clone this repository or download the project files.
 2.  **Python Environment Setup:** Follow the "Detailed Python Environment Setup Walkthrough" below to install Python (if needed) and set up a virtual environment.
 3.  **Create `requirements.txt`:** In your project directory, create a file named `requirements.txt` with the following content:
 
@@ -144,7 +144,9 @@ And finally, when the playlist is ready:
     With the virtual environment active:
 
     ```bash
-    python playlist_maker.py your_input_file.txt [other options...]
+    python run_cli.py your_input_file.txt [other options...]
+    # Or, from the project root:
+    python -m playlist_maker.app your_input_file.txt [other options...]
     ```
 
 9.  **Deactivate (When Done):**
@@ -161,16 +163,16 @@ The script is run from the command line. Here's a basic example and the help out
 **Basic Invocation:**
 
 ```bash
-python playlist_maker.py input_playlist.txt
-python playlist_maker.py -i --output-name-format "{basename:cp}_{YYYY}-{MM}-{DD}.m3u" your_playlist_name.txt
+python run_cli.py input_playlist.txt
+python run_cli.py -i --output-name-format "{basename:cp}_{YYYY}-{MM}-{DD}.m3u" your_playlist_name.txt
 ```
 
 **Help Output:**
 
 ```bash
-python playlist_maker.py --help
+python run_cli.py --help
 
-usage:  playlist_maker.py [-h] [-l LIBRARY] [--mpd-music-dir MPD_MUSIC_DIR]
+usage:  run_cli.py [-h] [-l LIBRARY] [--mpd-music-dir MPD_MUSIC_DIR]
                           [-o OUTPUT_DIR] [--missing-dir MISSING_DIR]
                           [-m [MPD_PLAYLIST_DIR]] [-t [0-100]]
                           [--live-penalty [0.0-1.0]]
@@ -243,9 +245,9 @@ options:
 The script can also be configured via two INI-style configuration files:
 
 ```
-playlist_maker.conf: Place this file in the same directory as playlist_maker.py.
+playlist_maker.conf: Place this file in the project root directory (alongside `run_cli.py`).
 
-~/.config/playlist-maker/playlist_maker.conf: User-specific configuration located in your home directory's .config folder.
+~/.config/playlist-maker/config.ini: User-specific configuration. (Assuming `CONFIG_FILENAME_USER = "config.ini"`)
 ```
 
 Settings in these files are overridden by command-line arguments. Refer to the comments within playlist*maker.py (near the DEFAULT* constants) or the script's help output for available options and their sections (e.g., [Paths], [Matching], [Logging], [General]).
@@ -288,4 +290,4 @@ python playlist_maker_gui.py your_playlist_name.txt
 
 ## Version
 
-Current version: **1.7.1**
+Current version: **2.0.0**
