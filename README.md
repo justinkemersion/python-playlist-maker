@@ -284,6 +284,16 @@ api_key = YOUR_OPENAI_API_KEY_GOES_HERE
 # Default AI model to use if --ai-model is not specified on the command line.
 # Examples: gpt-3.5-turbo, gpt-4-turbo-preview, gpt-4
 model = gpt-3.5-turbo
+
+[Cache]
+# Enable the persistent library index cache for faster startup on subsequent runs.
+# If disabled, the library will be fully scanned each time.
+enable_library_cache = true
+
+# Filename for the SQLite database used for the library index cache.
+# This will be stored in a 'data' subdirectory of your project.
+# Default: library_index.sqlite
+index_db_filename = library_index.sqlite
 ```
 
 ## Playlist Maker GUI
