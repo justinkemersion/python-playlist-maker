@@ -4,9 +4,7 @@ This Python script converts simple text files containing `Artist - Track` listin
 
 ## Concept
 
-"I want to easily create playlists using music from my own music library." With this method, you can easily concept the playlist in text files and run them through `playlist_maker.py` to generate .m3u playlists. Making playlists by hand is fun, but using AI to help generate them, curate them, and then quickly convert them to .m3u playlists using this script is what I've come up with so far. 
-
-The ultimate version is to somehow feed AI a database of my library, query it with playlist params, have it return the query with a playlist in the format that this script expects, and trigger this script to output the .m3u. I've gotten to the point where I've successfully used AI to trigger this script with an `Artist - Track` formatted playlist, but since it doesn't know what music I have, it is hit or miss with resulting playlists. That being said, with this script I can spend a little more time curating AI generated playlists to fit the music I own in my music library. 
+"I want to easily create playlists using music from my own music library." With this method, you can easily concept the playlist in text files and run them through `run_cli.py` to generate .m3u playlists. Making playlists by hand is fun, but using AI to help generate them, curate them, and then quickly convert them to .m3u playlists using this script is what I've come up with so far.
 
 ## Overview
 
@@ -18,7 +16,7 @@ Here's an example of the script when it is initialized and scanning the library 
 python run_cli.py experimental_psych_pop.txt
 ```
 
-![Library Scan Output](assets/playlist-maker-library-scan.png)
+![Library Scan Output](assets/open-ai.png)
 
 When an ambiguous match occurs in interactive mode, you'll see a prompt like this:
 
