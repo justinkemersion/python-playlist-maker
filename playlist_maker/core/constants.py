@@ -1,6 +1,6 @@
 # playlist_maker/core/constants.py
 
-SCRIPT_VERSION = "2.1.0" # Changed from 2.0.0
+SCRIPT_VERSION = "2.2.0" # Changed (e.g., from 2.1.0)
 
 # --- Configuration Defaults ---
 DEFAULT_SCAN_LIBRARY = "~/music"
@@ -22,6 +22,9 @@ DEFAULT_PARENTHETICAL_STRIP_KEYWORDS = [
     'mono', 'stereo', 'reprise', 'instrumental'
 ]
 DEFAULT_OUTPUT_NAME_FORMAT = "{basename:cp}_{YYYY}-{MM}-{DD}.m3u"
+
+DEFAULT_ENABLE_LIBRARY_CACHE = True
+DEFAULT_LIBRARY_INDEX_DB_FILENAME = "library_index.sqlite" # Just the filename
 
 # --- AI Defaults ---
 DEFAULT_AI_PROVIDER = "openai" # For future expansion if other providers are added

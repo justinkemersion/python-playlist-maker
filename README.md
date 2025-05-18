@@ -58,6 +58,11 @@ And finally, when the playlist is ready:
     - No match meets the threshold.
     - Offers choices like selecting a specific match, skipping the track, or picking a random track by the same artist.
 - **Missing Tracks Report:** Creates a separate text file listing tracks from the input that couldn't be matched or were skipped.
+- **Persistent Library Cache (New!):**
+    - After the initial full scan, the script caches your library index (track metadata, paths, modification times) in an SQLite database (`data/library_index.sqlite` by default).
+    - Subsequent runs load from this cache, only scanning for new, modified, or deleted files, leading to significantly faster startup times for large libraries.
+    - Use `--force-rescan` to ignore the cache and rebuild the index from scratch.
+    - Configurable via the `[Cache]` section in `playlist_maker.conf`.
 - **Configurable:** Many options controllable via configuration files (`playlist_maker.conf`, `~/.config/playlist-maker/config.ini`) and command-line arguments.
 - **Logging:** Detailed logging to a file (`warning.log` by default) for troubleshooting.
 
@@ -294,4 +299,4 @@ python playlist_maker_gui.py your_playlist_name.txt
 ```
 
 ## Version
-Current version: **2.1.0**
+Current version: **2.2.0**

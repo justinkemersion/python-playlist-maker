@@ -68,6 +68,7 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
     Returns a dictionary indicating success or failure and any skipped tracks.
     """
     global INTERACTIVE_MODE, PARENTHETICAL_STRIP_REGEX # Allow main to modify these module-level globals
+    library_service = None # Initialize for finally block
 
     # --- 1. Initial Setup: Project Root, Config, Args ---
     project_root_dir = Path.cwd()
@@ -128,6 +129,11 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
     elif args.interactive is None: INTERACTIVE_MODE = get_config_value("General", "interactive", fallback=False, expected_type=bool)
     else: INTERACTIVE_MODE = False
     logging.info(f"Interactive mode: {INTERACTIVE_MODE}")
+
+    final_enable_library_cache = get_config_value("Cache", "enable_library_cache", constants.DEFAULT_ENABLE_LIBRARY_CACHE, bool)
+    final_library_index_db_filename = get_config_value("Cache", "index_db_filename", constants.DEFAULT_LIBRARY_INDEX_DB_FILENAME, str)
+    # Construct full DB path relative to project root's 'data' subdirectory
+    library_index_db_full_path = project_root_dir / "data" / final_library_index_db_filename
 
     # --- Get AI Config Values ---
     # Order: CLI arg -> Environment Var -> Config file -> Python Constant Default
@@ -252,10 +258,26 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
     logging.info(f"Target M3U output filepath: {full_output_m3u_filepath} (basename source: '{raw_playlist_basename}')")
 
     # --- 8. Initialize Services ---
-    library_service = LibraryService()
     matching_service = MatchingService(INTERACTIVE_MODE) # Pass interactive status
     playlist_service = PlaylistService()
-    ai_service = AIService(api_key=final_ai_api_key_from_config, default_model=constants.DEFAULT_AI_MODEL) # Pass effective API key
+    ai_service = AIService(api_key=final_ai_api_key_from_config, default_model=constants.DEFAULT_AI_MODEL)
+    try:
+        library_service = LibraryService(db_path=library_index_db_full_path)
+    except ConnectionError as e: # Catch DB connection error from LibraryService.__init__
+        print(colorize(f"Error initializing library cache DB: {e}", Colors.RED), file=sys.stderr)
+        logging.critical(f"MAIN: Failed to initialize LibraryService due to DB connection error: {e}", exc_info=True)
+        return {"success": False, "error": f"Library cache DB init failed: {e}"}
+    
+    matching_service = MatchingService(INTERACTIVE_MODE)
+    playlist_service = PlaylistService()
+    ai_service = None # Initialize
+    if args.ai_prompt:
+        try:
+            ai_service = AIService(api_key=final_ai_api_key_from_config, default_model=constants.DEFAULT_AI_MODEL)
+        except ImportError as e:
+             print(colorize(f"Error: {e}", Colors.RED), file=sys.stderr)
+             if library_service: library_service.close_db() # Close DB if opened
+             return {"success": False, "error": str(e)}
 
     # --- Print User-Facing Header ---
     print(f"{Colors.CYAN}{Colors.BOLD}=== Playlist Maker {constants.SCRIPT_VERSION} ==={Colors.RESET}")
@@ -385,18 +407,19 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
 
     # --- 10. Scan Music Library ---
     # library_service.scan_library prints its own progress and summary
+    logging.info(f"MAIN: Starting library scan. Force rescan: {args.force_rescan}, Use cache: {final_enable_library_cache}")
     scan_successful = library_service.scan_library(
         str(library_abs_path),
         final_supported_extensions_tuple,
-        live_album_keywords_regex_obj, # Pass compiled regex
-        PARENTHETICAL_STRIP_REGEX      # Pass compiled regex (module-level global)
+        live_album_keywords_regex_obj,
+        PARENTHETICAL_STRIP_REGEX,
+        force_rescan=args.force_rescan, # Pass the new CLI argument
+        use_cache=final_enable_library_cache # Pass the config setting
     )
     if not scan_successful:
-        # Error message already printed by library_service.scan_library
-        logging.error("MAIN: Library scan reported as not successful or found no tracks. Aborting.")
-        # GUI needs a clear signal
-        return {"success": False, "error": "Library scan failed or found no tracks", "skipped_tracks": []}
-    current_library_index = library_service.get_library_index() # Get the scanned index
+        if library_service: library_service.close_db() # Important: close DB even on scan failure
+        return {"success": False, "error": "Library scan failed or found no tracks"}
+    current_library_index = library_service.get_library_index()
 
 
     # --- 11. Process Tracks & Build M3U Data Structures ---
@@ -550,6 +573,10 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
     logging.info(f"--- Playlist Maker {constants.SCRIPT_VERSION} processing completed. ---")
     print(f"\n{colorize('DONE', Colors.BOLD + Colors.GREEN)}")
     # Return list of original "Artist - Title" lines that were skipped for GUI/caller
+    return {"success": True, "skipped_tracks": [line.split(" (Reason:")[0] for line in skipped_track_details_for_file]}
+
+    # Ensure DB is closed before returning successfully
+    if library_service: library_service.close_db()
     return {"success": True, "skipped_tracks": [line.split(" (Reason:")[0] for line in skipped_track_details_for_file]}
 
 # Note: The `if __name__ == "__main__":` block that calls `main()` is NOT part of the `main()` function.
