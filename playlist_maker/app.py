@@ -150,6 +150,15 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
                          constants.DEFAULT_AI_MODEL
     logging.info(f"Effective AI model for generation: {effective_ai_model if args.ai_prompt else 'Not used'}")
 
+    # --- Get "Save AI Suggestions" Config ---
+    final_save_ai_suggestions = get_config_value("AI", "save_ai_suggestions", 
+                                                 constants.DEFAULT_SAVE_AI_SUGGESTIONS, bool)
+    final_ai_suggestions_dir_str = get_config_value("AI", "ai_suggestions_log_dir", 
+                                                    constants.DEFAULT_AI_SUGGESTIONS_LOG_DIR, str)
+    
+    # Expand and resolve AI suggestions directory path
+    # Done after project_root_dir is established
+    ai_suggestions_abs_dir_path = project_root_dir / Path(os.path.expanduser(final_ai_suggestions_dir_str))
 
     # --- 3. Path Expansion and Validation ---
     final_library_path = os.path.expanduser(final_library_path)
@@ -285,128 +294,122 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
     else: print(f"{Symbols.INFO} No local configuration files loaded (or files were empty/invalid).")
     print(f"{Colors.CYAN}{'-'*45}{Colors.RESET}")
 
-    # --- 9. Get Input Tracks (from AI or File) ---
+    # Initialize these for use in the main logic block
     input_track_tuples = []
-    # This variable will store the path of the input file if one was used, for the missing tracks header.
-    # If AI is used, this can be a descriptive string.
-    source_description_for_missing_header = "AI Generated Playlist" 
-    source_type = None # To know if it was AI or file
+    source_description_for_missing_header = "Unknown Input" # Default
+    input_playlist_file_abs_path = None # Will be set if file input is used
 
-    ai_service = None
+    # --- 9. Get Input Tracks (from AI or File) ---
+    user_accepted_ai_list_for_processing = False # Flag specific to AI path
+
     if args.ai_prompt:
-        if args.ai_prompt: # Only try to init AIService if AI prompt is given
-            try:
-                ai_service = AIService(api_key=final_ai_api_key_from_config, default_model=constants.DEFAULT_AI_MODEL)
-            except ImportError as e: # Catch the specific error
-                print(colorize(f"Error: {e}", Colors.RED), file=sys.stderr)
-                return {"success": False, "error": str(e)}
+        source_description_for_missing_header = f"AI Prompt: {args.ai_prompt[:70]}..." # For missing file header
         print(f"{Symbols.INFO} Generating playlist from AI prompt: \"{args.ai_prompt}\" using model {effective_ai_model}...")
-        # ... (AI generation logic as you have it, populating input_track_tuples) ...
-        # ... (Handle ai_service.client check, ConnectionError, other exceptions) ...
-        if not ai_service.client:
-            print(colorize("Error: AI Service not initialized. Please check your API key configuration.", Colors.RED), file=sys.stderr)
-            return {"success": False, "error": "AI Service not initialized (API key/library issue)."}
+        
+        if not ai_service or not ai_service.client: # Check if ai_service was initialized and client is ready
+            print(colorize("Error: AI Service not available. Check API key and ensure 'openai' library is installed.", Colors.RED), file=sys.stderr)
+            if library_service: library_service.close_db()
+            return {"success": False, "error": "AI Service not available (API key/library issue)."}
         try:
             input_track_tuples = ai_service.generate_playlist_from_prompt(args.ai_prompt, effective_ai_model)
+            
             if not input_track_tuples:
-                print(colorize("Warning: AI returned an empty or unparsable playlist. No tracks to process.", Colors.YELLOW), file=sys.stderr)
-            else:
+                print(colorize("Warning: AI returned an empty or unparsable playlist.", Colors.YELLOW), file=sys.stderr)
+            else: # AI returned tracks
                 print(f"{Symbols.SUCCESS} AI generated {len(input_track_tuples)} track suggestions.")
-                
-                # --- NEW: Display AI Playlist and Ask for Confirmation ---
+
+                # --- SAVE AI SUGGESTIONS (BEFORE CONFIRMATION FOR LIBRARY PROCESSING) ---
+                if final_save_ai_suggestions:
+                    try:
+                        ai_suggestions_abs_dir_path.mkdir(parents=True, exist_ok=True)
+                        sane_prompt_fname = re.sub(r'\W+', '_', args.ai_prompt.lower().strip())[:40]
+                        if not sane_prompt_fname: sane_prompt_fname = "ai_playlist"
+                        timestamp_fname = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        ai_log_filename = f"ai_suggestions_{sane_prompt_fname}_{timestamp_fname}.txt"
+                        ai_log_filepath = ai_suggestions_abs_dir_path / ai_log_filename
+
+                        with open(ai_log_filepath, "w", encoding="utf-8") as f_ai_log:
+                            f_ai_log.write(f"# AI Prompt: {args.ai_prompt}\n")
+                            f_ai_log.write(f"# Model Used: {effective_ai_model}\n")
+                            f_ai_log.write(f"# Generated At: {datetime.now().isoformat()}\n")
+                            f_ai_log.write("# --- Suggested Tracks ---\n")
+                            for art, tit in input_track_tuples: # Corrected variable names
+                                f_ai_log.write(f"{art} - {tit}\n")
+                        logging.info(f"MAIN: Saved AI-generated track suggestions to: {ai_log_filepath}")
+                        print(colorize(f"{Symbols.INFO} Raw AI suggestions saved to: {ai_log_filepath}", Colors.BLUE))
+                    except Exception as e_ai_save:
+                        logging.error(f"MAIN: Failed to save AI suggestions: {e_ai_save}", exc_info=True)
+                        print(colorize(f"{Symbols.WARNING} Could not save AI suggestions list: {e_ai_save}", Colors.YELLOW))
+                # --- END SAVE AI SUGGESTIONS ---
+
+                # --- Display AI Playlist and Ask for Confirmation to process against LIBRARY ---
                 print(f"\n{Colors.CYAN}{Colors.BOLD}--- AI Generated Playlist Preview ---{Colors.RESET}")
-                if not input_track_tuples: # Should be caught above, but double check
-                    print(colorize("AI returned no tracks.", Colors.YELLOW))
-                else:
-                    for i, (artist, title) in enumerate(input_track_tuples):
-                        print(f"  {i+1:02d}. {colorize(artist, Colors.MAGENTA)} - {colorize(title, Colors.CYAN)}")
-                
+                for i, (art, tit) in enumerate(input_track_tuples): # Corrected variable names
+                    print(f"  {i+1:02d}. {colorize(art, Colors.MAGENTA)} - {colorize(tit, Colors.CYAN)}")
                 print("-" * 35)
                 while True:
-                    confirm_choice = input(colorize("Proceed with processing this AI-generated playlist? (yes/no): ", Colors.BLUE + Colors.BOLD)).lower().strip()
+                    confirm_choice = input(colorize("Proceed with processing this AI-generated playlist against your library? (yes/no): ", Colors.BLUE + Colors.BOLD)).lower().strip()
                     if confirm_choice in ['yes', 'y']:
-                        logging.info("User accepted AI-generated playlist for processing.")
-                        break
+                        logging.info("User accepted AI-generated playlist for library processing.")
+                        user_accepted_ai_list_for_processing = True
+                        break 
                     elif confirm_choice in ['no', 'n']:
-                        print(colorize("AI-generated playlist rejected by user. Exiting.", Colors.YELLOW))
-                        logging.info("User rejected AI-generated playlist.")
-                        # Return success: False because no playlist was actually made.
-                        return {"success": False, # CHANGED
-                                "error": "AI playlist rejected by user.", # Add an error/reason message
+                        print(colorize("AI-generated playlist will NOT be processed against library. Suggestions were saved (if enabled).", Colors.YELLOW))
+                        logging.info("User rejected processing AI-generated playlist against library.")
+                        if library_service: library_service.close_db()
+                        return {"success": True, # Program ran, user made a choice
                                 "skipped_tracks": [], 
-                                "message": "AI playlist rejected by user."} #
+                                "message": "AI playlist suggestions saved; library processing rejected by user."}
                     else:
                         print(colorize("Invalid choice. Please enter 'yes' or 'no'.", Colors.RED))
-                # --- END NEW SECTION ---
-        except ConnectionError as e: # Catch specific error from AIService
+                # --- END CONFIRMATION FOR LIBRARY PROCESSING ---
+            
+            # If AI returned tracks but user rejected processing them, clear input_track_tuples
+            if input_track_tuples and not user_accepted_ai_list_for_processing:
+                 input_track_tuples = [] 
+
+        except ConnectionError as e:
             print(colorize(f"Error generating playlist with AI: {e}", Colors.RED), file=sys.stderr)
+            if library_service: library_service.close_db()
             return {"success": False, "error": str(e)}
-        except Exception as e: # Catch other unexpected errors
+        except Exception as e:
             print(colorize(f"An unexpected error occurred during AI playlist generation: {e}", Colors.RED), file=sys.stderr)
             logging.error("MAIN: Unexpected error during AI playlist generation.", exc_info=True)
+            if library_service: library_service.close_db()
             return {"success": False, "error": f"Unexpected AI error: {e}"}
-
-    elif args.playlist_file: # Only process playlist_file if ai_prompt was NOT used AND playlist_file was given
-        # Resolve playlist_file_abs_path here, ONLY if it's the chosen input method
+    
+    elif args.playlist_file: # File input mode
         try:
             input_playlist_file_abs_path = Path(args.playlist_file).resolve(strict=True)
-            source_description_for_missing_header = str(input_playlist_file_abs_path) # Use actual path
-            logging.info(f"Resolved input playlist file: {input_playlist_file_abs_path}")
+            source_description_for_missing_header = str(input_playlist_file_abs_path)
+            logging.info(f"MAIN: Using input playlist file: {input_playlist_file_abs_path}")
         except FileNotFoundError:
-            logging.error(f"Input playlist file '{args.playlist_file}' not found.", exc_info=True)
+            logging.error(f"Input playlist file '{args.playlist_file}' not found.")
             print(colorize(f"Error: Input playlist file '{args.playlist_file}' not found.", Colors.RED), file=sys.stderr)
+            if library_service: library_service.close_db()
             return {"success": False, "error": f"Input playlist file not found: {args.playlist_file}"}
         
         print(f"Reading input file: {input_playlist_file_abs_path}...")
         try:
             input_track_tuples = playlist_service.read_input_playlist(str(input_playlist_file_abs_path))
-        except Exception as e: # Catch other errors from read_input_playlist itself
+        except Exception as e:
             print(colorize(f"Error reading input playlist '{input_playlist_file_abs_path}': {e}", Colors.RED), file=sys.stderr)
-            logging.error(f"Failed to read input playlist '{input_playlist_file_abs_path}': {e}", exc_info=True)
+            logging.error(f"MAIN: Failed to read input playlist '{input_playlist_file_abs_path}': {e}", exc_info=True)
+            if library_service: library_service.close_db()
             return {"success": False, "error": f"Error reading input playlist: {e}"}
     
-    # No else needed because argparse mutually_exclusive_group(required=True) ensures
-    # that either args.ai_prompt has a value or args.playlist_file has a value.
-
     if not input_track_tuples:
-        if source_type == "AI" and not confirm_choice in ['yes', 'y']: # User rejected, already handled
-             pass # Message already printed
-        else:
-            print(colorize("No tracks to process. Exiting.", Colors.YELLOW), file=sys.stderr)
-        return {"success": True, "skipped_tracks": [], "message": "No tracks provided or generated."}  
+        print(colorize("No tracks to process. Exiting.", Colors.YELLOW), file=sys.stderr)
+        if library_service: library_service.close_db()
+        return {"success": True, "skipped_tracks": [], "message": "No tracks available or chosen for processing."}
     
     num_input_tracks = len(input_track_tuples)
-    # Message adjusted to reflect source
-    if source_type == "AI":
-        print(f"Proceeding to process {num_input_tracks} AI-generated track entries...")
-    else: # source_type == "File"
+    # This message was slightly modified to reflect source_type (AI or File)
+    if args.ai_prompt and user_accepted_ai_list_for_processing: # Check user_accepted flag here
+        print(f"Proceeding to process {num_input_tracks} AI-generated track entries against library...")
+    elif args.playlist_file:
         print(f"Successfully obtained {num_input_tracks} track entries from file for processing.")
-
-    # --- Determine Output M3U Filename (moved after input source determination) ---
-    # Base the name on AI prompt if that's the source, or file otherwise
-    if args.ai_prompt:
-        raw_playlist_basename = re.sub(r'\W+', '_', args.ai_prompt.lower().strip())[:50]
-        if not raw_playlist_basename: raw_playlist_basename = "ai_generated_playlist"
-    elif args.playlist_file: # Use playlist_file stem if it was the source
-        # Need to re-resolve input_playlist_file_abs_path if not already done,
-        # or ensure it's available from the block above.
-        # For safety, let's assume input_playlist_file_abs_path was set if args.playlist_file is true.
-        if input_playlist_file_abs_path: # Check if it was resolved
-             raw_playlist_basename = input_playlist_file_abs_path.stem
-        else: # Should not happen if args.playlist_file is true and code is correct
-            logging.error("MAIN: Inconsistent state - playlist_file arg present but path not resolved for basename.")
-            raw_playlist_basename = "file_playlist_unresolved"
-    else: # Fallback, should ideally not be reached if argparse is set up correctly
-        raw_playlist_basename = "unknown_playlist_source"
-
-
-    current_time = datetime.now()
-    generated_m3u_filename_stem_ext = format_output_filename(
-        final_output_name_format_str, raw_playlist_basename, current_time
-    )
-    full_output_m3u_filepath = output_dir_abs_path / generated_m3u_filename_stem_ext
-    logging.info(f"Target M3U output filepath: {full_output_m3u_filepath} (basename source: '{raw_playlist_basename}')")
-
+    # If AI prompt was used but user rejected processing, input_track_tuples is empty, caught by "No tracks to process"
 
     # --- 10. Scan Music Library ---
     # library_service.scan_library prints its own progress and summary

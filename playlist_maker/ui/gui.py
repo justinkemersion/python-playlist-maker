@@ -145,7 +145,7 @@ class PlaylistMakerGUI:
         row_idx = 0
         
         # Radiobutton for File mode
-        self.file_radio_btn = ttk.Radiobutton(input_source_frame, text="Playlist File:", 
+        self.file_radio_btn = ttk.Radiobutton(input_source_frame, text="Playlist File (.txt):", 
                                               variable=self.input_mode_var, value="file", 
                                               command=self.toggle_input_mode)
         self.file_radio_btn.grid(row=row_idx, column=0, sticky=tk.W, padx=5, pady=5)
