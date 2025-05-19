@@ -112,3 +112,12 @@ log/
 # Sensitive configuration (if any added later, e.g., MPD credentials)
 # config.ini
 # .secrets
+
+# SQLite databases from the data directory
+data/*.sqlite
+data/*.sqlite3
+data/*.sqlite-journal
+data/*.sqlite3-journal
+
+# If you want to ignore the entire data directory for future commits:
+data/
