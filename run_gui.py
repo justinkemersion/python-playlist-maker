@@ -5,7 +5,7 @@ import logging
 import sys
 # Ensure playlist_maker_gui can be found (if it's in the same directory)
 # If playlist_maker_gui.py is also at the root, this direct import is fine.
-from playlist_maker_gui import PlaylistMakerGUI 
+from playlist_maker.ui.gui import PlaylistMakerGUI
 
 if __name__ == "__main__":
     logging.basicConfig(

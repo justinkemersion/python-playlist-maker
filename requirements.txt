@@ -3,4 +3,5 @@ mutagen
 fuzzywuzzy
 python-levenshtein
 openai>=1.3.0  # Specify a version or a minimum version for openai
+ttkbootstrap
 # pandas # Optional

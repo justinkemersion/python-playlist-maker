@@ -1,22 +1,27 @@
 # Playlist Maker (.m3u)
 
-This Python application uses OpenAI prompt or local text files containing `Artist - Track` listings into `.m3u` playlists suitable for anything that uses the standard .m3u playlist format. It intelligently matches the tracks against your local music library using fuzzy string matching and metadata analysis.
+This Python application intelligently converts user inputs—either from AI-generated prompts (via OpenAI) or local text files listing `Artist - Track`—into `.m3u` playlists. It matches these inputs against your local music library using advanced string matching and metadata analysis, creating playlists compatible with a wide range of music players.
 
 ## Concept
 
-"I want to easily create playlists using music from my own music library." With this method, you can easily concept the playlist in text files or using the OpenAI API feature to generate them for you. If using OpenAI it automatically runs the playlist output through `run_cli.py` to generate .m3u playlists (see screengrab below). Making playlists by hand is fun, but using AI to help generate them, curate them, and then quickly convert them to .m3u playlists using this script is what I've come up with so far.
+The core idea is to streamline playlist creation for your personal music library. Whether you prefer crafting lists by hand, leveraging AI for inspiration, or a mix of both, Playlist Maker helps you quickly turn those ideas into playable `.m3u` files. This version enhances the process with AI-driven playlist drafting and a persistent library cache for faster operation.
 
 ## Overview
 
-The app scans your specified music library, builds an index of your tracks (including metadata like artist, title, album, duration, and identifying live recordings), and then processes an input text file. For each `Artist - Track` line in the input file, it searches the library index for the best match. It generates an M3U playlist file with relative paths based on your music directory configuration, making it directly usable by any android music app or software that uses .m3u format playlists. It also features an interactive mode for resolving ambiguities and allows customizable output filenames.
+Playlist Maker scans your music library, building a smart index of your tracks (including artist, title, album, duration, live recording status, and file modification times). This index is then cached in an SQLite database for significantly faster startups on subsequent runs.
 
-Here's an example of the script when it is initialized and scanning the library before generating the playlist:
+When you provide an input (an AI prompt or a text file):
+1.  If using an AI prompt, the application queries OpenAI (GPT models) to generate a list of `Artist - Song` suggestions. You can preview and accept/reject this list.
+2.  The accepted track list (from AI or file) is then processed. Each entry is fuzzi-matched against your cached library index.
+3.  An M3U playlist is generated with relative paths (based on your MPD music directory configuration), ready for use in various music players.
+4.  An interactive mode helps resolve ambiguities, and a report lists any tracks that couldn't be matched.
 
+Here's an example of using an AI prompt with the CLI:
 ```bash
-python run_cli.py experimental_psych_pop.txt
+python run_cli.py --ai-prompt "Chill electronic music for late night coding" -i
 ```
 
-![Library Scan Output](assets/open-ai.png)
+![Library Scan Output](assets/playlist-maker-gui-example.png)
 
 When an ambiguous match occurs in interactive mode, you'll see a prompt like this:
 

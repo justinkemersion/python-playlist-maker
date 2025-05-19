@@ -19,23 +19,22 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+# --- Crucial Imports for New Structure (Now relative or package-absolute) ---
 try:
-    from playlist_maker.app import main as pm_main_cli
-    from playlist_maker.core import constants as pm_constants
-    from playlist_maker.ui.cli_interface import Colors # Still useful for log handler if needed
+    from ..app import main as pm_main_cli             # Relative: from parent dir's app.py
+    from ..core import constants as pm_constants      # Relative: from parent dir's core.constants
+    from .cli_interface import Colors                # Relative: from same dir's cli_interface.py
+    # OR Absolute from package root:
+    # from playlist_maker.app import main as pm_main_cli
+    # from playlist_maker.core import constants as pm_constants
+    # from playlist_maker.ui.cli_interface import Colors
 except ImportError as e:
-    logging.critical(f"GUI: CRITICAL IMPORT ERROR: {e}", exc_info=True)
-    # Attempt to show a Tkinter error box even if other imports failed.
-    # This is a last resort before exiting.
-    try:
-        root_fail = tk.Tk()
-        root_fail.withdraw() # Hide the main window
-        messagebox.showerror("Critical Startup Error", f"Could not load application components: {e}\n\n"
-                                                    "Please ensure the script is run from the project root and "
-                                                    "the 'playlist_maker' directory and all its contents are intact.")
-    except Exception as tk_e:
-        print(f"CRITICAL: Failed to show Tkinter error dialog: {tk_e}", file=sys.stderr)
-        print(f"Original import error: {e}", file=sys.stderr)
+    # ... (Error handling for imports as before, but the paths are different now) ...
+    # This block becomes less likely to be hit if your package structure is sound.
+    logging.critical(f"GUI: CRITICAL IMPORT ERROR inside package: {e}", exc_info=True)
+    # Showing a Tkinter messagebox here if Tk itself fails to import due to this is tricky.
+    # The process might just exit.
+    print(f"CRITICAL ERROR: Cannot load GUI components due to import failure: {e}", file=sys.stderr)
     sys.exit(1)
 
 # --- TkinterLogHandler (no changes needed to its internal logic) ---
@@ -202,12 +201,12 @@ class PlaylistMakerGUI:
         self.library_path_entry.grid(row=row_idx, column=1, sticky=tk.EW, padx=5, pady=5)
         ttk.Button(paths_frame, text="Browse...", command=self.browse_library).grid(row=row_idx, column=2, padx=5, pady=5)
 
-        row_idx += 1
-        ttk.Label(paths_frame, text="MPD Music Directory:").grid(row=row_idx, column=0, sticky=tk.W, padx=5, pady=5)
-        self.mpd_music_dir_entry = ttk.Entry(paths_frame, width=50)
-        self.mpd_music_dir_entry.insert(0, os.path.expanduser(pm_constants.DEFAULT_MPD_MUSIC_DIR_CONF))
-        self.mpd_music_dir_entry.grid(row=row_idx, column=1, sticky=tk.EW, padx=5, pady=5)
-        ttk.Button(paths_frame, text="Browse...", command=lambda: self.browse_directory(self.mpd_music_dir_entry)).grid(row=row_idx, column=2, padx=5, pady=5)
+        #row_idx += 1
+        #ttk.Label(paths_frame, text="MPD Music Directory:").grid(row=row_idx, column=0, sticky=tk.W, padx=5, pady=5)
+        #self.mpd_music_dir_entry = ttk.Entry(paths_frame, width=50)
+        #self.mpd_music_dir_entry.insert(0, os.path.expanduser(pm_constants.DEFAULT_MPD_MUSIC_DIR_CONF))
+        #self.mpd_music_dir_entry.grid(row=row_idx, column=1, sticky=tk.EW, padx=5, pady=5)
+        #ttk.Button(paths_frame, text="Browse...", command=lambda: self.browse_directory(self.mpd_music_dir_entry)).grid(row=row_idx, column=2, padx=5, pady=5)
 
         row_idx += 1
         ttk.Label(paths_frame, text="Output Directory:").grid(row=row_idx, column=0, sticky=tk.W, padx=5, pady=5)
@@ -240,7 +239,7 @@ class PlaylistMakerGUI:
         general_options_subframe = ttk.Frame(options_frame, padding="0 5 0 5")
         general_options_subframe.pack(fill=tk.X)
 
-        self.interactive_var = tk.BooleanVar(value=False)
+        self.interactive_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(general_options_subframe, text="Use Console Interactive Mode (CLI Prompts)", variable=self.interactive_var).grid(row=0, column=0, sticky=tk.W, columnspan=2, pady=5)
         
         self.force_rescan_var = tk.BooleanVar(value=False)
@@ -420,7 +419,7 @@ class PlaylistMakerGUI:
             # Append path options
             for arg_name, entry_widget in [
                 ("--library", self.library_path_entry),
-                ("--mpd-music-dir", self.mpd_music_dir_entry),
+                #("--mpd-music-dir", self.mpd_music_dir_entry),
                 ("--output-dir", self.output_dir_entry)
             ]:
                 path_val = entry_widget.get().strip()
