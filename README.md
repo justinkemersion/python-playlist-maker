@@ -16,11 +16,13 @@ When you provide an input (an AI prompt or a text file):
 3.  An M3U playlist is generated with relative paths (based on your MPD music directory configuration), ready for use in various music players.
 4.  An interactive mode helps resolve ambiguities, and a report lists any tracks that couldn't be matched.
 
-Here's an example of using an AI prompt with the CLI:
-```bash
-python run_cli.py --ai-prompt "Chill electronic music for late night coding" -i
-```
+Here's an example of using an AI prompt with the simple GUI:
 
+```bash
+python run_gui.py
+
+# Or simply: python run_cli.py --ai-prompt "Chill electronic music for late night coding" -i (for cli mode)
+```
 ![Library Scan Output](assets/playlist-maker-gui-example.png)
 
 When an ambiguous match occurs in interactive mode, you'll see a prompt like this:
