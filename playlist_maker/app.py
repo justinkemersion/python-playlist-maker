@@ -330,8 +330,11 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
                     elif confirm_choice in ['no', 'n']:
                         print(colorize("AI-generated playlist rejected by user. Exiting.", Colors.YELLOW))
                         logging.info("User rejected AI-generated playlist.")
-                        # Return success, but indicate no actual playlist was made.
-                        return {"success": True, "skipped_tracks": [], "message": "AI playlist rejected by user."}
+                        # Return success: False because no playlist was actually made.
+                        return {"success": False, # CHANGED
+                                "error": "AI playlist rejected by user.", # Add an error/reason message
+                                "skipped_tracks": [], 
+                                "message": "AI playlist rejected by user."} #
                     else:
                         print(colorize("Invalid choice. Please enter 'yes' or 'no'.", Colors.RED))
                 # --- END NEW SECTION ---

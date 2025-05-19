@@ -1,6 +1,6 @@
 # playlist_maker/core/constants.py
 
-SCRIPT_VERSION = "2.2.0" # Changed (e.g., from 2.1.0)
+SSCRIPT_VERSION = "2.3.0"
 
 # --- Configuration Defaults ---
 DEFAULT_SCAN_LIBRARY = "~/music"
