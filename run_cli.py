@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# your_project_root/run_cli.py
+# playlist_maker/run_cli.py
 
 import sys
 from playlist_maker.app import main # Import the main function from your app module
