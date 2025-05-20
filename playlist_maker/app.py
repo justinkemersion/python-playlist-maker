@@ -72,6 +72,7 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
 
     # --- 1. Initial Setup: Project Root, Config, Args ---
     project_root_dir = Path.cwd()
+    
     try:
         # If app.py is in playlist_maker/, __file__.parent.parent is project_root
         project_root_dir = Path(__file__).resolve().parent.parent
@@ -509,6 +510,8 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
 
         # If a match was chosen (either auto or interactive), add to M3U lines
         if chosen_match_entry_dict:
+            library_service.record_track_usage(chosen_match_entry_dict['path'])
+            logging.info(f"APP: Recorded usage for {chosen_match_entry_dict['path']}")
             found_tracks_count += 1
             abs_file_path = Path(chosen_match_entry_dict['path'])
             duration = chosen_match_entry_dict.get('duration', -1)

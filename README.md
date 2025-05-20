@@ -316,4 +316,4 @@ python playlist_maker_gui.py your_playlist_name.txt
 ```
 
 ## Version
-Current version: **2.3.0**
+Current version: **2.4.0**
