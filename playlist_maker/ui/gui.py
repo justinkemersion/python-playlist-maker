@@ -1,4 +1,4 @@
-# playlist_maker_gui.py (at project root)
+# playlist_maker/ui/playlist_maker_gui.py
 
 import tkinter as tk
 # from tkinter import ttk # No longer need direct ttk if using ttkbootstrap's version

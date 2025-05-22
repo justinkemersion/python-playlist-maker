@@ -1,4 +1,4 @@
-# playlist_maker/requirements.txt
+# /requirements.txt
 mutagen
 fuzzywuzzy
 python-levenshtein
