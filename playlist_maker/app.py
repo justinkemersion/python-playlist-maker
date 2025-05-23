@@ -519,14 +519,14 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
             ext_artist = chosen_match_entry_dict.get('artist', input_artist_str) or input_artist_str
             ext_title = chosen_match_entry_dict.get('title', input_title_str) or input_title_str
             try:
-                relative_path_to_mpd = abs_file_path.relative_to(mpd_music_dir_abs_path)
+                relative_path_to_mpd = abs_file_path.relative_to(mpd_music_dir_abs_path) # mpd_music_dir_abs_path comes from config/default
                 m3u_lines_for_file.append(f"#EXTINF:{duration},{ext_artist} - {ext_title}")
                 m3u_lines_for_file.append(relative_path_to_mpd.as_posix())
-            except ValueError: # Path not relative to MPD dir
-                logging.warning(f"MAIN: Path '{abs_file_path}' not relative to MPD dir '{mpd_music_dir_abs_path}'. Skipping M3U entry for '{original_input_line}'.")
-                skipped_track_details_for_file.append(f"{original_input_line} (Reason: Path not in MPD tree - {abs_file_path})")
-                found_tracks_count -=1 # Correct count as this track is now considered skipped
-                print(f"  {Symbols.WARNING} {colorize('Skipped (Path Error):', Colors.YELLOW)} Not relative to MPD music directory.")
+            except ValueError: # Path not relative to the "base" dir for relativity
+                logging.warning(f"MAIN: Track '{abs_file_path}' not within base directory '{mpd_music_dir_abs_path}'. Using absolute path for M3U.")
+                m3u_lines_for_file.append(f"#EXTINF:{duration},{ext_artist} - {ext_title}")
+                m3u_lines_for_file.append(abs_file_path.as_posix()) # <<< FALLBACK TO ABSOLUTE PATH
+                print(f"  {Symbols.WARNING} {colorize('Path Note:', Colors.YELLOW)} Using absolute path for track (not in configured base directory for relative paths).")
         # If chosen_match_entry_dict is None, it was already added to skipped_track_details_for_file or handled by interactive skip message.
 
     # --- 12. Write Output Files (M3U, Missing Tracks, MPD Copy) ---
