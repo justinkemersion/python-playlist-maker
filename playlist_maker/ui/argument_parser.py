@@ -65,7 +65,7 @@ def parse_arguments(argv_list=None):
     parser.add_argument(
         '-v', '--version',
         action='version',
-        version=f'%(prog)s {constants.SCRIPT_VERSION}',
+        version=f'%(prog)s {constants.VERSION}',
         help="Show program's version number and exit."
     )
 

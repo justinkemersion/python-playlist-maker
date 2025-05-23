@@ -197,7 +197,7 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
     logging.getLogger().setLevel(final_log_level) # Set the root logger's level for file output
 
     # Log effective settings
-    logging.info(f"--- Playlist Maker {constants.SCRIPT_VERSION} Initializing ---")
+    logging.info(f"--- Playlist Maker {constants.VERSION} Initializing ---")
     logging.info(f"Command: {' '.join(sys.argv)}")
     logging.info(f"Loaded config files: {', '.join(map(str, loaded_config_files)) if loaded_config_files else 'None'}")
     # Log other key final_... values if desired for debugging.
@@ -290,7 +290,7 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
              return {"success": False, "error": str(e)}
 
     # --- Print User-Facing Header ---
-    print(f"{Colors.CYAN}{Colors.BOLD}=== Playlist Maker {constants.SCRIPT_VERSION} ==={Colors.RESET}")
+    print(f"{Colors.CYAN}{Colors.BOLD}=== Playlist Maker {constants.VERSION} ==={Colors.RESET}")
     if loaded_config_files: print(f"{Symbols.INFO} Config files loaded: {', '.join(map(str, loaded_config_files))}")
     else: print(f"{Symbols.INFO} No local configuration files loaded (or files were empty/invalid).")
     print(f"{Colors.CYAN}{'-'*45}{Colors.RESET}")
@@ -579,7 +579,7 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
         print(colorize(f"Unexpected error during file writing: {e}", Colors.RED), file=sys.stderr)
         return {"success": False, "error": str(e), "skipped_tracks": [line.split(" (Reason:")[0] for line in skipped_track_details_for_file]}
 
-    logging.info(f"--- Playlist Maker {constants.SCRIPT_VERSION} processing completed. ---")
+    logging.info(f"--- Playlist Maker {constants.VERSION} processing completed. ---")
     print(f"\n{colorize('DONE', Colors.BOLD + Colors.GREEN)}")
     # Return list of original "Artist - Title" lines that were skipped for GUI/caller
     return {"success": True, "skipped_tracks": [line.split(" (Reason:")[0] for line in skipped_track_details_for_file]}

@@ -89,7 +89,7 @@ class TkinterLogHandler(logging.Handler):
 class PlaylistMakerGUI:
     def __init__(self, root_window: ttk.Window): # Expecting a ttkbootstrap.Window
         self.root = root_window
-        self.root.title(f"Playlist Maker GUI v{pm_constants.SCRIPT_VERSION}")
+        self.root.title(f"Playlist Maker GUI v{pm_constants.VERSION}")
 
         # --- Apply a ttk theme and default font ---
         self.style = ttk.Style()

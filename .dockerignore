@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+.vscode/
+.idea/
+venv/
+*.egg-info/
+dist/
+build/
+*.db
+*.db-journal
+# We are dockerizing the CLI, not the GUI
+run_gui.py
+playlist_maker_gui.py
+# The data directory will be mounted as a volume, so no need to copy its contents
+# data/ # Comment out if you want to copy initial data, but usually mounted
