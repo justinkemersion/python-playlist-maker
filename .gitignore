@@ -122,3 +122,5 @@ data/*.sqlite3-journal
 # If you want to ignore the entire data directory for future commits:
 data/
 ai-suggestions/
+
+.env

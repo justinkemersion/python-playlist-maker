@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  playlist-maker:
+    build: .
+    image: playlist-maker-cli
+    container_name: playlist-maker-cli-app
+    stdin_open: true
+    tty: true
+    environment: 
+      # Pass the OpenAI API key from the host's .env file (or host environment)
+      # into the container as an environment variable also named OPENAI_API_KEY.
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ${HOST_CONFIG_FILE:-./docker_playlist_maker.conf}:/app/playlist_maker.conf:ro
+      - ${HOST_DATA_DIR:-./data_docker}:/app/data
+      - ${HOST_MUSIC_DIR:-~/Music}:/music:ro
+      # If you were using HOST_INPUT_FILE or HOST_INPUT_DIR, keep them if needed
+      # - ${HOST_INPUT_FILE}:/app/mounted_input.txt:ro
+      - ${HOST_INPUT_DIR:-./playlist-txt}:/app/inputs:ro # Make read-only if app only reads
+      
