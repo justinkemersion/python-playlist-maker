@@ -518,6 +518,8 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
             # Use matched artist/title if available, fallback to input
             ext_artist = chosen_match_entry_dict.get('artist', input_artist_str) or input_artist_str
             ext_title = chosen_match_entry_dict.get('title', input_title_str) or input_title_str
+            # Hardcoding the mpd path to be the same as the main library - quick fix.
+            mpd_music_dir_abs_path = library_abs_path
             try:
                 relative_path_to_mpd = abs_file_path.relative_to(mpd_music_dir_abs_path) # mpd_music_dir_abs_path comes from config/default
                 m3u_lines_for_file.append(f"#EXTINF:{duration},{ext_artist} - {ext_title}")
