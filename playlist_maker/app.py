@@ -243,7 +243,7 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
     # Other essential paths
     try:
         library_abs_path = Path(final_library_path).resolve(strict=True)
-        mpd_music_dir_abs_path = Path(final_mpd_music_dir_str).resolve(strict=True)
+        mpd_music_dir_abs_path = Path(final_library_path).resolve(strict=True)
         output_dir_abs_path = Path(final_output_dir_str).resolve()
         missing_tracks_dir_abs_path = Path(final_missing_dir_str).resolve()
     except FileNotFoundError as e: # For library, mpd_music_dir
