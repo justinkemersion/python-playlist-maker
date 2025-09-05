@@ -315,5 +315,46 @@ python playlist_maker_gui.py -i --output-name-format "{basename:cp}_{YYYY}-{MM}-
 python playlist_maker_gui.py your_playlist_name.txt
 ```
 
+## Improvement Tracking System
+
+This project includes a comprehensive system for tracking and managing improvement suggestions.
+
+### Quick Reference
+
+```bash
+# View all current improvements
+python track_improvements.py --list
+
+# Add a new improvement
+python track_improvements.py --add "Add unit tests for LibraryService"
+
+# Mark something as completed
+python track_improvements.py --complete "Fix duplicate close_db method"
+
+# Show progress statistics
+python track_improvements.py --stats
+```
+
+### Files
+
+- **`IMPROVEMENTS.md`** - Comprehensive list of all potential improvements, organized by priority and category
+- **`QUICK_IMPROVEMENTS.md`** - Immediate fixes and quick wins that can be implemented easily
+- **`track_improvements.py`** - Command-line tool for managing improvements
+- **`IMPROVEMENT_TRACKING.md`** - Detailed documentation for the tracking system
+
+### Categories
+
+- **High Priority** - Critical bugs, security issues, performance problems
+- **Medium Priority** - Feature enhancements, code quality improvements
+- **Low Priority** - Nice-to-have features, future enhancements
+
+### Workflow
+
+1. **Review** - Check `QUICK_IMPROVEMENTS.md` for immediate items
+2. **Plan** - Select items based on priority and available time
+3. **Implement** - Work on selected improvements
+4. **Track** - Mark items as completed using the tracking script
+5. **Update** - Add new suggestions as they arise
+
 ## Version
 Current version: **2.4.0**
