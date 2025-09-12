@@ -5,7 +5,7 @@
 ### Code Issues
 - [ ] **Duplicate `close_db()` method** in `library_service.py` (lines 466-476 and 477-485)
 - [ ] **Missing import** in `run_gui.py` - `tk` is used but not imported (line 27)
-- [ ] **Unused variable** in `app.py` - `mpd_music_dir_abs_path` is set but `final_mpd_music_dir_str` is used instead
+- [x] **Unused variable** in `app.py` - `mpd_music_dir_abs_path` is set but `final_mpd_music_dir_str` is used instead (Fixed: Removed redundant MPD path handling)
 
 ### Configuration Issues
 - [ ] **Empty API key** in `playlist_maker.conf` - should have placeholder or instructions
