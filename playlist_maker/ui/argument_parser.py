@@ -5,6 +5,15 @@ from playlist_maker.core import constants
 from .cli_interface import Colors 
 
 def parse_arguments(argv_list=None):
+    """
+    Parse command-line arguments for the Playlist Maker application.
+    
+    Args:
+        argv_list: Optional list of arguments (defaults to sys.argv)
+        
+    Returns:
+        argparse.Namespace: Parsed command-line arguments
+    """
     parser = argparse.ArgumentParser(
         description=f"{Colors.BOLD}Playlist Maker v{constants.VERSION} - Generate M3U playlists by matching 'Artist - Track' lines against a music library.{Colors.RESET}",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter

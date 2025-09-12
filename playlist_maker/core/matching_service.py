@@ -6,6 +6,7 @@ from fuzzywuzzy import fuzz # Make sure this is available or add to requirements
 # Normalization utils are needed
 from playlist_maker.utils.normalization_utils import normalize_and_detect_specific_live_format
 # We won't call UI prompts from here directly, so no UI imports.
+from . import constants
 
 # For type hinting the return value when interaction is needed
 from typing import List, Dict, Any, Tuple, Optional, Union
@@ -100,9 +101,9 @@ class MatchingService:
                     artist_bonus = 1.0
                 else:
                     library_artist_match_to_input_artist = fuzz.ratio(norm_input_artist_match_str, entry["norm_artist_stripped"])
-                    artist_bonus = (library_artist_match_to_input_artist / 100.0) * 0.5
+                    artist_bonus = (library_artist_match_to_input_artist / 100.0) * constants.DEFAULT_ARTIST_BONUS_MULTIPLIER
                 adjusted_score += artist_bonus
-                adjusted_score = min(adjusted_score, 100.0)
+                adjusted_score = min(adjusted_score, constants.DEFAULT_MAX_ADJUSTED_SCORE)
 
                 original_score_before_penalty = adjusted_score
                 penalty_applied = False

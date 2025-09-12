@@ -86,8 +86,19 @@ def validate_file_path(file_path: str | Path) -> tuple[bool, str]:
 def main(argv_list=None) -> dict: # main now explicitly returns a dict for status
     """
     Main application orchestration logic.
+    
     Parses arguments, loads config, initializes services, processes playlist, and writes output.
-    Returns a dictionary indicating success or failure and any skipped tracks.
+    Handles both AI-generated playlists and text file input, with comprehensive error handling.
+    
+    Args:
+        argv_list: Optional list of command-line arguments (defaults to sys.argv)
+        
+    Returns:
+        dict: Status dictionary with keys:
+            - success: bool - Whether the operation succeeded
+            - error: str - Error message if success is False
+            - skipped_tracks: list - List of tracks that couldn't be matched
+            - message: str - Optional informational message
     """
     global INTERACTIVE_MODE, PARENTHETICAL_STRIP_REGEX # Allow main to modify these module-level globals
     library_service = None # Initialize for finally block
@@ -200,9 +211,9 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
 
 
     # Post-processing / Validation of config values
-    if not (0 <= final_threshold <= 100):
+    if not (constants.DEFAULT_THRESHOLD_MIN <= final_threshold <= constants.DEFAULT_THRESHOLD_MAX):
         logging.error(f"Invalid threshold: {final_threshold}. Must be 0-100.")
-        print(colorize(f"Error: --threshold ({final_threshold}) must be between 0 and 100.", Colors.RED), file=sys.stderr)
+        print(colorize(f"Error: --threshold ({final_threshold}) must be between {constants.DEFAULT_THRESHOLD_MIN} and {constants.DEFAULT_THRESHOLD_MAX}.", Colors.RED), file=sys.stderr)
         sys.exit(2) # Argparse typically uses exit code 2 for bad arguments
     if not (0.0 <= final_live_penalty <= 1.0):
         logging.error(f"Invalid live penalty: {final_live_penalty}. Must be 0.0-1.0.")
@@ -293,7 +304,7 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
                             input_playlist_file_abs_path.stem if input_playlist_file_abs_path else \
                             "ai_playlist" # Fallback basename if AI prompt is empty or file is somehow None
     if args.ai_prompt: # Sanitize AI prompt for use as basename
-        raw_playlist_basename = re.sub(r'\W+', '_', args.ai_prompt.lower().strip())[:50] # Limit length
+        raw_playlist_basename = re.sub(r'\W+', '_', args.ai_prompt.lower().strip())[:constants.DEFAULT_AI_PROMPT_MAX_LENGTH]
         if not raw_playlist_basename: raw_playlist_basename = "ai_generated_playlist"
 
     current_time = datetime.now()
@@ -355,6 +366,7 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
             if library_service: library_service.close_db()
             return {"success": False, "error": "AI Service not available (API key/library issue)."}
         try:
+            print(f"{Symbols.INFO} Calling OpenAI API to generate playlist...")
             input_track_tuples = ai_service.generate_playlist_from_prompt(args.ai_prompt, effective_ai_model)
             
             if not input_track_tuples:
@@ -477,7 +489,7 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
     skipped_track_details_for_file = []   # For the -missing-tracks.txt file
     found_tracks_count = 0              # Count of tracks successfully added to M3U
 
-    print(f"\n{colorize('Processing Playlist:', Colors.CYAN)} {colorize(str(len(input_track_tuples)), Colors.BOLD)} input tracks.")
+    print(f"\n{colorize('Processing Playlist:', Colors.CYAN)} {colorize(str(len(input_track_tuples)), Colors.BOLD)} input tracks against library of {len(current_library_index)} tracks.")
     print(f"{Colors.CYAN}{'-'*45}{Colors.RESET}")
 
     for index, (input_artist_str, input_title_str) in enumerate(input_track_tuples):

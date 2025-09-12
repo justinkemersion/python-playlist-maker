@@ -13,6 +13,7 @@ from playlist_maker.utils.normalization_utils import (
     check_album_for_live_indicators
 )
 from playlist_maker.ui.cli_interface import Colors, Symbols, colorize
+from . import constants
 
 try:
     import pandas as pd
@@ -27,6 +28,15 @@ except ImportError:
 
 class LibraryService:
     def __init__(self, db_path: Path):
+        """
+        Initialize the LibraryService with a SQLite database connection.
+        
+        Args:
+            db_path: Path to the SQLite database file for caching library metadata
+            
+        The service will attempt to connect to the database and create necessary tables.
+        If the connection fails, the service will still function but without caching.
+        """
         self.db_path = db_path
         self.conn = None
         self.cursor = None
@@ -91,6 +101,16 @@ class LibraryService:
 
     # ... (get_file_metadata, _add_or_update_track_in_db, _get_cached_tracks_mtimes, _load_track_from_db_row are unchanged) ...
     def get_file_metadata(self, file_path_obj: Path) -> tuple[str, str, str, int | None]:
+        """
+        Extract metadata from an audio file using mutagen.
+        
+        Args:
+            file_path_obj: Path to the audio file
+            
+        Returns:
+            Tuple of (artist, title, album, duration_in_seconds)
+            Duration will be None if not available or if there's an error
+        """
         artist, title, album, duration = "", "", "", None
         try:
             audio = mutagen.File(file_path_obj, easy=True)
@@ -189,7 +209,16 @@ class LibraryService:
         new_or_updated_in_db_count = 0
         db_tracks_removed_count = 0 # Counts tracks removed from library_tracks
         stats_tracks_pruned_count = 0 # New counter for stats
-        update_interval_dots = 500
+        update_interval_progress = constants.DEFAULT_PROGRESS_UPDATE_INTERVAL
+        
+        # First pass: count total files for better progress indication
+        print(colorize("Counting files in library...", Colors.BLUE))
+        total_files_count = 0
+        for root, _, files in os.walk(scan_library_path, followlinks=True):
+            for file_name in files:
+                if file_name.lower().endswith(supported_extensions):
+                    total_files_count += 1
+        print(f"{Symbols.INFO} Found {total_files_count} audio files to process.")
 
         cached_mtimes = {}
         if cache_active and not force_rescan:
@@ -219,8 +248,9 @@ class LibraryService:
                     continue
                 
                 processed_fs_files_count += 1
-                if processed_fs_files_count % update_interval_dots == 0:
-                    print(colorize(".", Colors.BLUE), end="", flush=True)
+                if processed_fs_files_count % update_interval_progress == 0 or processed_fs_files_count == total_files_count:
+                    progress_percent = (processed_fs_files_count / total_files_count * 100) if total_files_count > 0 else 0
+                    print(f"\r{Symbols.INFO} Processing: {processed_fs_files_count}/{total_files_count} files ({progress_percent:.1f}%)", end="", flush=True)
 
                 file_path_obj = root_path / file_name
                 try:
@@ -426,9 +456,21 @@ class LibraryService:
         }
 
     def get_library_index(self) -> list[dict]:
+        """
+        Get the in-memory library index for track matching.
+        
+        Returns:
+            List of dictionaries containing track metadata for matching operations
+        """
         return self.library_index_memory
 
     def record_track_usage(self, library_track_path: str):
+        """
+        Record that a track was added to a playlist for usage statistics.
+        
+        Args:
+            library_track_path: Full path to the track file
+        """
         if not self.cursor or not self.conn:
             logging.warning(f"LIB_SVC: DB not available, cannot record usage for '{library_track_path}'.")
             return
