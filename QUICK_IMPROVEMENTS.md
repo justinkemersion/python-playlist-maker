@@ -3,8 +3,8 @@
 ## 🚨 Immediate Fixes Needed
 
 ### Code Issues
-- [ ] **Duplicate `close_db()` method** in `library_service.py` (lines 466-476 and 477-485)
-- [ ] **Missing import** in `run_gui.py` - `tk` is used but not imported (line 27)
+- [x] **Duplicate `close_db()` method** in `library_service.py` (lines 466-476 and 477-485) (Fixed: Removed duplicate method)
+- [x] **Missing import** in `run_gui.py` - `tk` is used but not imported (line 27) (Fixed: Added missing tkinter imports)
 - [x] **Unused variable** in `app.py` - `mpd_music_dir_abs_path` is set but `final_mpd_music_dir_str` is used instead (Fixed: Removed redundant MPD path handling)
 
 ### Configuration Issues

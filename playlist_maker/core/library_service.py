@@ -473,14 +473,3 @@ class LibraryService:
                 self.cursor = None
             except sqlite3.Error as e:
                 logging.error(f"LIB_SVC: Error closing DB connection: {e}", exc_info=True)
-
-    def close_db(self):
-        if self.conn:
-            try:
-                self.conn.commit() # Final commit
-                self.conn.close()
-                logging.info("LIB_SVC: Closed library index DB connection.")
-                self.conn = None
-                self.cursor = None
-            except sqlite3.Error as e:
-                logging.error(f"LIB_SVC: Error closing DB connection: {e}", exc_info=True)
