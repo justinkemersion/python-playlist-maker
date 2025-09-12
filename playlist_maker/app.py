@@ -60,6 +60,28 @@ from .core.ai_service import AIService
 INTERACTIVE_MODE: bool = False
 PARENTHETICAL_STRIP_REGEX = None # Compiled regex object
 
+def validate_api_key(api_key: str | None) -> bool:
+    """Validate OpenAI API key format."""
+    if not api_key:
+        return False
+    # Basic validation: OpenAI keys typically start with 'sk-' and are 51 characters
+    return api_key.startswith('sk-') and len(api_key) >= 20
+
+def validate_file_path(file_path: str | Path) -> tuple[bool, str]:
+    """Validate that a file path exists and is accessible."""
+    try:
+        path_obj = Path(file_path).resolve(strict=True)
+        if path_obj.is_file():
+            return True, ""
+        else:
+            return False, f"Path exists but is not a file: {path_obj}"
+    except FileNotFoundError:
+        return False, f"File not found: {file_path}"
+    except PermissionError:
+        return False, f"Permission denied: {file_path}"
+    except Exception as e:
+        return False, f"Invalid path: {e}"
+
 
 def main(argv_list=None) -> dict: # main now explicitly returns a dict for status
     """
@@ -231,6 +253,16 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
     # --- 6. Resolve Essential File Paths (Absolute) ---
     input_playlist_file_abs_path = None # Initialize
     if args.playlist_file: # Only resolve if a file path was actually given
+        # Validate the playlist file path
+        is_valid, error_msg = validate_file_path(args.playlist_file)
+        if not is_valid:
+            logging.error(f"Input playlist file validation failed: {error_msg}", exc_info=True)
+            print(colorize(f"Error: {error_msg}", Colors.RED), file=sys.stderr)
+            print(colorize("  • Check that the file path is correct and the file exists", Colors.YELLOW), file=sys.stderr)
+            print(colorize("  • Ensure the file contains 'Artist - Track' entries (one per line)", Colors.YELLOW), file=sys.stderr)
+            print(colorize("  • Use absolute paths or ensure relative paths are correct", Colors.YELLOW), file=sys.stderr)
+            return {"success": False, "error": f"Input playlist file validation failed: {error_msg}"}
+        
         try:
             input_playlist_file_abs_path = Path(args.playlist_file).resolve(strict=True)
             logging.info(f"Resolved input playlist file: {input_playlist_file_abs_path}")
@@ -238,6 +270,9 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
             # This error specific to playlist_file, if it was the chosen input method
             logging.error(f"Input playlist file '{args.playlist_file}' not found: {e}", exc_info=True)
             print(colorize(f"Error: Input playlist file '{args.playlist_file}' not found.", Colors.RED), file=sys.stderr)
+            print(colorize("  • Check that the file path is correct and the file exists", Colors.YELLOW), file=sys.stderr)
+            print(colorize("  • Ensure the file contains 'Artist - Track' entries (one per line)", Colors.YELLOW), file=sys.stderr)
+            print(colorize("  • Use absolute paths or ensure relative paths are correct", Colors.YELLOW), file=sys.stderr)
             return {"success": False, "error": f"Input playlist file not found: {args.playlist_file}"}
     # Other essential paths
     try:
@@ -246,7 +281,10 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
         missing_tracks_dir_abs_path = Path(final_missing_dir_str).resolve()
     except FileNotFoundError as e: # For library, mpd_music_dir
         logging.error(f"Essential path does not exist: {e}.", exc_info=True)
-        print(colorize(f"Error: Essential directory path not found: {e}", Colors.RED), file=sys.stderr)
+        print(colorize(f"Error: Essential directory not found: {e}", Colors.RED), file=sys.stderr)
+        print(colorize("  • Check that your music library path exists and is accessible", Colors.YELLOW), file=sys.stderr)
+        print(colorize("  • Verify the path in your config file or command line arguments", Colors.YELLOW), file=sys.stderr)
+        print(colorize("  • Use absolute paths or ensure relative paths are correct", Colors.YELLOW), file=sys.stderr)
         return {"success": False, "error": f"Essential directory not found: {e}"}
 
     # --- 7. Determine Output M3U Filename ---
@@ -305,8 +343,15 @@ def main(argv_list=None) -> dict: # main now explicitly returns a dict for statu
         source_description_for_missing_header = f"AI Prompt: {args.ai_prompt[:70]}..." # For missing file header
         print(f"{Symbols.INFO} Generating playlist from AI prompt: \"{args.ai_prompt}\" using model {effective_ai_model}...")
         
+        # Validate API key if provided
+        if final_ai_api_key_from_config and not validate_api_key(final_ai_api_key_from_config):
+            print(colorize("Warning: API key format appears invalid (should start with 'sk-' and be at least 20 characters)", Colors.YELLOW), file=sys.stderr)
+        
         if not ai_service or not ai_service.client: # Check if ai_service was initialized and client is ready
-            print(colorize("Error: AI Service not available. Check API key and ensure 'openai' library is installed.", Colors.RED), file=sys.stderr)
+            print(colorize("Error: AI Service not available.", Colors.RED), file=sys.stderr)
+            print(colorize("  • Check that your OpenAI API key is set in config file or OPENAI_API_KEY environment variable", Colors.YELLOW), file=sys.stderr)
+            print(colorize("  • Ensure 'openai' library is installed: pip install openai", Colors.YELLOW), file=sys.stderr)
+            print(colorize("  • Verify your API key is valid and has sufficient credits", Colors.YELLOW), file=sys.stderr)
             if library_service: library_service.close_db()
             return {"success": False, "error": "AI Service not available (API key/library issue)."}
         try:

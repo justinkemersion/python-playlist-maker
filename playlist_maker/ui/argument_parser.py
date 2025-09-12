@@ -6,7 +6,7 @@ from .cli_interface import Colors
 
 def parse_arguments(argv_list=None):
     parser = argparse.ArgumentParser(
-        description=f"{Colors.BOLD}Generate M3U playlists by matching 'Artist - Track' lines against a music library.{Colors.RESET}",
+        description=f"{Colors.BOLD}Playlist Maker v{constants.VERSION} - Generate M3U playlists by matching 'Artist - Track' lines against a music library.{Colors.RESET}",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 

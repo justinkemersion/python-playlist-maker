@@ -8,15 +8,15 @@
 - [x] **Unused variable** in `app.py` - `mpd_music_dir_abs_path` is set but `final_mpd_music_dir_str` is used instead (Fixed: Removed redundant MPD path handling)
 
 ### Configuration Issues
-- [ ] **Empty API key** in `playlist_maker.conf` - should have placeholder or instructions
-- [ ] **Missing MPD music directory** in config - could cause path resolution issues
+- [x] **Empty API key** in `playlist_maker.conf` - should have placeholder or instructions (Fixed: Added example format)
+- [x] **Missing MPD music directory** in config - could cause path resolution issues (Fixed: Set to match library path)
 
 ## 🔧 Quick Wins (Low Effort, High Impact)
 
 ### User Experience
-- [ ] **Add version check** - Display version in GUI title and CLI help
-- [ ] **Better error messages** - More descriptive error messages for common issues
-- [ ] **Input validation** - Validate file paths and API keys before processing
+- [x] **Add version check** - Display version in GUI title and CLI help (Fixed: Version now shown in CLI description and GUI title)
+- [x] **Better error messages** - More descriptive error messages for common issues (Fixed: Added helpful bullet points for common errors)
+- [x] **Input validation** - Validate file paths and API keys before processing (Fixed: Added validation functions with helpful error messages)
 - [ ] **Progress indicators** - Show progress for long-running operations
 
 ### Code Quality
